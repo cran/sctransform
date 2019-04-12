@@ -14,9 +14,8 @@ robust_scale_binned(y, x, breaks)
 \item{breaks}{Numeric vector of breaks}
 }
 \value{
-Numeric vector of scaled values
+Numeric vector of scaled score
 }
 \description{
-Put the values in \code{y} in bins based on the values in \code{x} and the
-breaks defined in \code{breaks}. Apply robust scaling to \code{y} per bin.
+Robust scale using median and mad per bin
 }

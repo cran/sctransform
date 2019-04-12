@@ -1,3 +1,43 @@
+
+#' Geometric mean per row
+#'
+#' @param x matrix of class \code{matrix} or \code{dgCMatrix}
+#' @param eps small value to add to x to avoid log(0); default is 1
+#'
+#' @return geometric means
+row_gmean <- function(x, eps = 1) {
+  if (class(x) == 'matrix') {
+    return(exp(rowMeans(log(x + eps))) - eps)
+  }
+  if (class(x) == 'dgCMatrix') {
+    ret <- row_gmean_dgcmatrix(x = x@x, i = x@i, rows = nrow(x), cols = ncol(x), eps = eps)
+    names(ret) <- rownames(x)
+    return(ret)
+  }
+  stop('matrix x needs to be of class matrix or dgCMatrix')
+}
+
+#' Variance per row
+#'
+#' @param x matrix of class \code{matrix} or \code{dgCMatrix}
+#'
+#' @return variances
+row_var <- function(x) {
+  if (class(x) == 'matrix') {
+    ret <- row_var_dense(x)
+    names(ret) <- rownames(x)
+    return(ret)
+  }
+  if (class(x) == 'dgCMatrix') {
+    ret <- row_var_dgcmatrix(x = x@x, i = x@i, rows = nrow(x), cols = ncol(x))
+    names(ret) <- rownames(x)
+    return(ret)
+  }
+  stop('matrix x needs to be of class matrix or dgCMatrix')
+}
+
+
+
 #' Identify outliers
 #'
 #' @param y Dependent variable
@@ -21,14 +61,11 @@ is_outlier <- function(y, x, th = 10) {
 
 #' Robust scale using median and mad per bin
 #'
-#' Put the values in \code{y} in bins based on the values in \code{x} and the
-#' breaks defined in \code{breaks}. Apply robust scaling to \code{y} per bin.
-#'
 #' @param y Numeric vector
 #' @param x Numeric vector
 #' @param breaks Numeric vector of breaks
 #'
-#' @return Numeric vector of scaled values
+#' @return Numeric vector of scaled score
 #'
 #' @importFrom stats aggregate
 #'
@@ -70,26 +107,29 @@ deviance_residual <- function(y, mu, theta, wt=1) {
   sqrt(r) * sign(y - mu)
 }
 
-#' Return deviance residuals of regularized models
+#' Return Pearson or deviance residuals of regularized models
 #'
 #' @param vst_out The output of a vst run
-#' @param umi The UMI count matrix that will be converted
+#' @param umi The UMI count matrix that will be used
+#' @param residual_type What type of residuals to return; can be 'pearson' or 'deviance'; default is 'pearson'
+#' @param res_clip_range Numeric of length two specifying the min and max values the results will be clipped to; default is c(-sqrt(ncol(umi)), sqrt(ncol(umi)))
 #' @param cell_attr Data frame of cell meta data
 #' @param bin_size Number of genes to put in each bin (to show progress)
 #' @param show_progress Whether to print progress bar
 #'
-#' @return A matrix of deviance residuals
+#' @return A matrix of residuals
 #'
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' vst_out <- vst(pbmc, return_gene_attr = TRUE)
-#' dev_res <- get_deviance_residuals(vst_out, pbmc)
+#' vst_out <- vst(pbmc)
+#' pearson_res <- get_residuals(vst_out, pbmc)
+#' deviance_res <- get_residuals(vst_out, pbmc, residual_type = 'deviance')
 #' }
 #'
-get_deviance_residuals <- function(vst_out, umi, cell_attr = vst_out$cell_attr,
-                                   bin_size = 256, show_progress = TRUE) {
+get_residuals <- function(vst_out, umi, residual_type = 'pearson', res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
+                          cell_attr = vst_out$cell_attr, bin_size = 256, show_progress = TRUE) {
   regressor_data <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str)), cell_attr)
   model_pars <- vst_out$model_pars_fit
   if (!is.null(dim(vst_out$model_pars_nonreg))) {
@@ -98,18 +138,89 @@ get_deviance_residuals <- function(vst_out, umi, cell_attr = vst_out$cell_attr,
     model_pars <- cbind(vst_out$model_pars_fit, vst_out$model_pars_nonreg)
   }
 
-  genes <- rownames(model_pars)[rownames(model_pars) %in% rownames(umi)]
+  genes <- rownames(umi)[rownames(umi) %in% rownames(model_pars)]
+  if (show_progress) {
+    message('Calculating residuals of type ', residual_type, ' for ', length(genes), ' genes')
+  }
   bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
   max_bin <- max(bin_ind)
   if (show_progress) {
     pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
   }
-  res <- matrix(NA, length(genes), nrow(regressor_data), dimnames = list(genes, rownames(regressor_data)))
+  res <- matrix(NA_real_, length(genes), nrow(regressor_data), dimnames = list(genes, rownames(regressor_data)))
   for (i in 1:max_bin) {
     genes_bin <- genes[bin_ind == i]
     mu <- exp(tcrossprod(model_pars[genes_bin, -1, drop=FALSE], regressor_data))
     y <- as.matrix(umi[genes_bin, , drop=FALSE])
-    res[genes_bin, ] <- deviance_residual(y, mu, model_pars[genes_bin, 'theta'])
+    res[genes_bin, ] <- switch(residual_type,
+      'pearson' = (y - mu) / sqrt(mu + mu^2 / model_pars[genes_bin, 'theta']),
+      'deviance' = deviance_residual(y, mu, model_pars[genes_bin, 'theta'])
+    )
+    if (show_progress) {
+      setTxtProgressBar(pb, i)
+    }
+  }
+  if (show_progress) {
+    close(pb)
+  }
+  res[res < res_clip_range[1]] <- res_clip_range[1]
+  res[res > res_clip_range[2]] <- res_clip_range[2]
+  return(res)
+}
+
+#' Return variance of residuals of regularized models
+#'
+#' This never creates the full residual matrix and can be used to determine highly variable genes.
+#'
+#' @param vst_out The output of a vst run
+#' @param umi The UMI count matrix that will be used
+#' @param residual_type What type of residuals to return; can be 'pearson' or 'deviance'; default is 'pearson'
+#' @param res_clip_range Numeric of length two specifying the min and max values the residuals will be clipped to; default is c(-sqrt(ncol(umi)), sqrt(ncol(umi)))
+#' @param cell_attr Data frame of cell meta data
+#' @param bin_size Number of genes to put in each bin (to show progress)
+#' @param show_progress Whether to print progress bar
+#'
+#' @return A vector of residual variances (after clipping)
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' vst_out <- vst(pbmc)
+#' res_var <- get_residual_var(vst_out, pbmc)
+#' }
+#'
+get_residual_var <- function(vst_out, umi, residual_type = 'pearson', res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
+                          cell_attr = vst_out$cell_attr, bin_size = 256, show_progress = TRUE) {
+  regressor_data <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str)), cell_attr)
+  model_pars <- vst_out$model_pars_fit
+  if (!is.null(dim(vst_out$model_pars_nonreg))) {
+    regressor_data_nonreg <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str_nonreg)), cell_attr)
+    regressor_data <- cbind(regressor_data, regressor_data_nonreg)
+    model_pars <- cbind(vst_out$model_pars_fit, vst_out$model_pars_nonreg)
+  }
+
+  genes <- rownames(umi)[rownames(umi) %in% rownames(model_pars)]
+  if (show_progress) {
+    message('Calculating variance for residuals of type ', residual_type, ' for ', length(genes), ' genes')
+  }
+  bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
+  max_bin <- max(bin_ind)
+  if (show_progress) {
+    pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
+  }
+  res <- matrix(NA_real_, length(genes))
+  names(res) <- genes
+  for (i in 1:max_bin) {
+    genes_bin <- genes[bin_ind == i]
+    mu <- exp(tcrossprod(model_pars[genes_bin, -1, drop=FALSE], regressor_data))
+    y <- as.matrix(umi[genes_bin, , drop=FALSE])
+    res_mat <- switch(residual_type,
+                      'pearson' = (y - mu) / sqrt(mu + mu^2 / model_pars[genes_bin, 'theta']),
+                      'deviance' = deviance_residual(y, mu, model_pars[genes_bin, 'theta']))
+    res_mat[res_mat < res_clip_range[1]] <- res_clip_range[1]
+    res_mat[res_mat > res_clip_range[2]] <- res_clip_range[2]
+    res[genes_bin] <- row_var(res_mat)
     if (show_progress) {
       setTxtProgressBar(pb, i)
     }
