@@ -10,15 +10,15 @@ vst(umi, cell_attr = NULL, latent_var = c("log_umi"),
   res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
   bin_size = 256, min_cells = 5, residual_type = "pearson",
   return_cell_attr = FALSE, return_gene_attr = TRUE,
-  return_corrected_umi = FALSE, bw_adjust = 3, gmean_eps = 1,
-  theta_given = NULL, show_progress = TRUE)
+  return_corrected_umi = FALSE, min_variance = -Inf, bw_adjust = 3,
+  gmean_eps = 1, theta_given = NULL, show_progress = TRUE)
 }
 \arguments{
 \item{umi}{A matrix of UMI counts with genes as rows and cells as columns}
 
 \item{cell_attr}{A data frame containing the dependent variables; if omitted a data frame with umi and gene will be generated}
 
-\item{latent_var}{The dependent variables to regress out as a character vector; must match column names in cell_attr; default is c("log_umi_per_gene")}
+\item{latent_var}{The independent variables to regress out as a character vector; must match column names in cell_attr; default is c("log_umi")}
 
 \item{batch_var}{The dependent variables indicating which batch a cell belongs to; no batch interaction terms used if omiited}
 
@@ -45,6 +45,8 @@ vst(umi, cell_attr = NULL, latent_var = c("log_umi"),
 \item{return_gene_attr}{Calculate gene attributes and make part of output; default is TRUE}
 
 \item{return_corrected_umi}{If set to TRUE output will contain corrected UMI matrix; see \code{correct} function}
+
+\item{min_variance}{Lower bound for the estimated variance for any gene in any cell when calculating pearson residual; default is -Inf}
 
 \item{bw_adjust}{Kernel bandwidth adjustment factor used during regurlarization; factor will be applied to output of bw.SJ; default is 3}
 
@@ -93,6 +95,8 @@ If \code{method} is set to 'nb', coefficients and theta are estimated by a singl
 }
 
 \examples{
+\donttest{
 vst_out <- vst(pbmc)
+}
 
 }

@@ -12,7 +12,7 @@ NULL
 #'
 #' @param umi A matrix of UMI counts with genes as rows and cells as columns
 #' @param cell_attr A data frame containing the dependent variables; if omitted a data frame with umi and gene will be generated
-#' @param latent_var The dependent variables to regress out as a character vector; must match column names in cell_attr; default is c("log_umi_per_gene")
+#' @param latent_var The independent variables to regress out as a character vector; must match column names in cell_attr; default is c("log_umi")
 #' @param batch_var The dependent variables indicating which batch a cell belongs to; no batch interaction terms used if omiited
 #' @param latent_var_nonreg The non-regularized dependent variables to regress out as a character vector; must match column names in cell_attr; default is NULL
 #' @param n_genes Number of genes to use when estimating parameters (default uses 2000 genes, set to NULL to use all genes)
@@ -26,6 +26,7 @@ NULL
 #' @param return_cell_attr Make cell attributes part of the output; default is FALSE
 #' @param return_gene_attr Calculate gene attributes and make part of output; default is TRUE
 #' @param return_corrected_umi If set to TRUE output will contain corrected UMI matrix; see \code{correct} function
+#' @param min_variance Lower bound for the estimated variance for any gene in any cell when calculating pearson residual; default is -Inf
 #' @param bw_adjust Kernel bandwidth adjustment factor used during regurlarization; factor will be applied to output of bw.SJ; default is 3
 #' @param gmean_eps Small value added when calculating geometric mean of a gene to avoid log(0); default is 1
 #' @param theta_given Named numeric vector of fixed theta values for the genes; will only be used if method is set to nb_theta_given; default is NULL
@@ -69,7 +70,9 @@ NULL
 #' @export
 #'
 #' @examples
+#' \donttest{
 #' vst_out <- vst(pbmc)
+#' }
 #'
 vst <- function(umi,
                 cell_attr = NULL,
@@ -87,6 +90,7 @@ vst <- function(umi,
                 return_cell_attr = FALSE,
                 return_gene_attr = TRUE,
                 return_corrected_umi = FALSE,
+                min_variance = -Inf,
                 bw_adjust = 3,
                 gmean_eps = 1,
                 theta_given = NULL,
@@ -233,7 +237,7 @@ vst <- function(umi,
       mu <- exp(tcrossprod(model_pars_final[genes_bin, -1, drop=FALSE], regressor_data_final))
       y <- as.matrix(umi[genes_bin, , drop=FALSE])
       res[genes_bin, ] <- switch(residual_type,
-        'pearson' = (y - mu) / sqrt(mu + mu^2 / model_pars_final[genes_bin, 'theta']),
+        'pearson' = pearson_residual(y, mu, model_pars_final[genes_bin, 'theta'], min_var = min_variance),
         'deviance' = deviance_residual(y, mu, model_pars_final[genes_bin, 'theta'])
       )
       if (show_progress) {
@@ -332,7 +336,7 @@ get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1, m
                                      theta <- theta_given[j]
                                      fit2 <- 0
                                      try(fit2 <- glm(as.formula(model_str), data = data_step1, family = negative.binomial(theta=theta)), silent=TRUE)
-                                     if (class(fit2)[1] == 'numeric') {
+                                     if (inherits(x = fit2, what = 'numeric')) {
                                        return(c(theta, glm(as.formula(model_str), data = data_step1, family = poisson)$coefficients))
                                      } else {
                                        return(c(theta, fit2$coefficients))
@@ -343,7 +347,7 @@ get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1, m
                                      theta <- as.numeric(x = theta.ml(y = y, mu = fit$fitted))
                                      fit2 <- 0
                                      try(fit2 <- glm(as.formula(model_str), data = data_step1, family = negative.binomial(theta=theta)), silent=TRUE)
-                                     if (class(fit2)[1] == 'numeric') {
+                                     if (inherits(x = fit2, what = 'numeric')) {
                                        return(c(theta, fit$coefficients))
                                      } else {
                                        return(c(theta, fit2$coefficients))
@@ -352,7 +356,7 @@ get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1, m
                                    if (method == 'nb') {
                                      fit <- 0
                                      try(fit <- glm.nb(as.formula(model_str), data = data_step1), silent=TRUE)
-                                     if (class(fit)[1] == 'numeric') {
+                                     if (inherits(x = fit, what = 'numeric')) {
                                        fit <- glm(as.formula(model_str), data = data_step1, family = poisson)
                                        fit$theta <- as.numeric(x = theta.ml(y = y, mu = fit$fitted))
                                      }

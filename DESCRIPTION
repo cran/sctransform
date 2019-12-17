@@ -1,7 +1,7 @@
 Package: sctransform
 Type: Package
 Title: Variance Stabilizing Transformations for Single Cell UMI Data
-Version: 0.2.0
+Version: 0.2.1
 Authors@R: person(given = 'Christoph', family = 'Hafemeister', email = 'chafemeister@nygenome.org', role = c('aut', 'cre'), comment = c(ORCID = '0000-0001-6365-8254'))
 Description: A normalization method for single-cell UMI count data using a 
   variance stabilizing transformation. The transformation is based on a 
@@ -15,15 +15,15 @@ License: GPL-3 | file LICENSE
 Encoding: UTF-8
 LazyData: true
 Depends: R (>= 3.0.2)
-Imports: MASS, Matrix, methods, future, future.apply, ggplot2,
-        reshape2, gridExtra, Rcpp
+Imports: MASS, Matrix, methods, future.apply, ggplot2, reshape2,
+        gridExtra
 LinkingTo: Rcpp (>= 0.11.0), RcppEigen
-Suggests: irlba, testthat
+Suggests: irlba, testthat, knitr
 RoxygenNote: 6.1.1
 NeedsCompilation: yes
-Packaged: 2019-04-11 23:46:40 UTC; chafemeister
+Packaged: 2019-12-17 12:55:24 UTC; chafemeister
 Author: Christoph Hafemeister [aut, cre]
     (<https://orcid.org/0000-0001-6365-8254>)
 Maintainer: Christoph Hafemeister <chafemeister@nygenome.org>
 Repository: CRAN
-Date/Publication: 2019-04-12 12:32:38 UTC
+Date/Publication: 2019-12-17 15:00:02 UTC
