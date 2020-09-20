@@ -1,4 +1,41 @@
 
+# Check cell attributes; add missing ones
+make_cell_attr <- function(umi, cell_attr, latent_var, batch_var, latent_var_nonreg, verbosity) {
+  if (is.null(cell_attr)) {
+    cell_attr <- data.frame(row.names = colnames(umi))
+  }
+
+  # these are the cell attributes that we know how to calculate given the count matrix
+  known_attr <- c('umi', 'gene', 'log_umi', 'log_gene', 'umi_per_gene', 'log_umi_per_gene')
+  # these are the missing cell attributes specified in latent_var
+  missing_attr <- setdiff(c(latent_var, batch_var, latent_var_nonreg), colnames(cell_attr))
+  if (length(missing_attr) > 0) {
+    if (verbosity > 0) {
+      message('Calculating cell attributes from input UMI matrix: ', paste(missing_attr, collapse = ', '))
+    }
+    unknown_attr <- setdiff(missing_attr, known_attr)
+    if (length(unknown_attr) > 0) {
+      stop(sprintf('Unknown cell attributes: %s. Check latent_var, batch_var and latent_var_nonreg and make sure the variables are in cell_attr', paste(unknown_attr, collapse = ', ')))
+    }
+    new_attr <- list()
+    if (any(c('umi', 'log_umi', 'umi_per_gene', 'log_umi_per_gene') %in% missing_attr)) {
+      new_attr$umi <- colSums(umi)
+      new_attr$log_umi <- log10(new_attr$umi)
+    }
+    if (any(c('gene', 'log_gene', 'umi_per_gene', 'log_umi_per_gene') %in% missing_attr)) {
+      new_attr$gene <- colSums(umi > 0)
+      new_attr$log_gene <- log10(new_attr$gene)
+    }
+    if (any(c('umi_per_gene', 'log_umi_per_gene') %in% missing_attr)) {
+      new_attr$umi_per_gene <- new_attr$umi / new_attr$gene
+      new_attr$log_umi_per_gene <- log10(new_attr$umi_per_gene)
+    }
+    new_attr <- do.call(cbind, new_attr)
+    cell_attr <- cbind(cell_attr, new_attr[, setdiff(colnames(new_attr), colnames(cell_attr)), drop = TRUE])
+  }
+  return(cell_attr)
+}
+
 #' Geometric mean per row
 #'
 #' @param x matrix of class \code{matrix} or \code{dgCMatrix}
@@ -15,6 +52,48 @@ row_gmean <- function(x, eps = 1) {
     return(ret)
   }
   stop('matrix x needs to be of class matrix or dgCMatrix')
+}
+
+#' Geometric mean per row grouped by a factor
+#'
+#' @param x matrix of class \code{dgCMatrix}
+#' @param group factor to group the columns by (will be converted using \code{as.factor} and \code{droplevels})
+#' @param eps small value to add to x to avoid log(0); default is 1
+#'
+#' @return matrix of geometric means
+row_gmean_grouped <- function(x, group, eps = 1) {
+  group <- droplevels(as.factor(group))
+  if (inherits(x = x, what = 'dgCMatrix')) {
+    ret <- row_gmean_grouped_dgcmatrix(x = x@x, i = x@i, p = x@p,
+                                       group = as.integer(group) - 1,
+                                       groups = length(levels(group)),
+                                       rows = nrow(x),
+                                       eps = eps)
+    rownames(ret) <- rownames(x)
+    colnames(ret) <- levels(group)
+    return(ret)
+  }
+  stop('matrix x needs to be of class dgCMatrix')
+}
+
+#' Arithmetic mean per row grouped by a factor
+#'
+#' @param x matrix of class \code{dgCMatrix}
+#' @param group factor to group the columns by (will be converted using \code{as.factor} and \code{droplevels})
+#'
+#' @return matrix of arithmetic means
+row_mean_grouped <- function(x, group) {
+  group <- droplevels(as.factor(group))
+  if (inherits(x = x, what = 'dgCMatrix')) {
+    ret <- row_mean_grouped_dgcmatrix(x = x@x, i = x@i, p = x@p,
+                                      group = as.integer(group) - 1,
+                                      groups = length(levels(group)),
+                                      rows = nrow(x))
+    rownames(ret) <- rownames(x)
+    colnames(ret) <- levels(group)
+    return(ret)
+  }
+  stop('matrix x needs to be of class dgCMatrix')
 }
 
 #' Variance per row
@@ -121,7 +200,9 @@ deviance_residual <- function(y, mu, theta, wt=1) {
 #' @param min_variance Lower bound for the estimated variance for any gene in any cell when calculating pearson residual; default is vst_out$arguments$min_variance
 #' @param cell_attr Data frame of cell meta data
 #' @param bin_size Number of genes to put in each bin (to show progress)
-#' @param show_progress Whether to print progress bar
+#' @param verbosity An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2
+#' @param verbose Deprecated; use verbosity instead
+#' @param show_progress Deprecated; use verbosity instead
 #'
 #' @return A matrix of residuals
 #'
@@ -137,7 +218,23 @@ deviance_residual <- function(y, mu, theta, wt=1) {
 get_residuals <- function(vst_out, umi, residual_type = 'pearson',
                           res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
                           min_variance = vst_out$arguments$min_variance,
-                          cell_attr = vst_out$cell_attr, bin_size = 256, show_progress = TRUE) {
+                          cell_attr = vst_out$cell_attr, bin_size = 256,
+                          verbosity = 2, verbose = TRUE, show_progress = TRUE) {
+  # Take care of deprecated arguments
+  args_passed <- names(sapply(match.call(), deparse))[-1]
+  if ('verbose' %in% args_passed) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    verbosity <- as.numeric(verbose)
+  }
+  if ('show_progress' %in% args_passed) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    if (show_progress) {
+      verbosity <- 2
+    } else {
+      verbosity <- min(verbosity, 1)
+    }
+  }
+
   regressor_data <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str)), cell_attr)
   model_pars <- vst_out$model_pars_fit
   if (!is.null(dim(vst_out$model_pars_nonreg))) {
@@ -147,12 +244,12 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
   }
 
   genes <- rownames(umi)[rownames(umi) %in% rownames(model_pars)]
-  if (show_progress) {
+  if (verbosity > 0) {
     message('Calculating residuals of type ', residual_type, ' for ', length(genes), ' genes')
   }
   bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
   max_bin <- max(bin_ind)
-  if (show_progress) {
+  if (verbosity > 1) {
     pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
   }
   res <- matrix(NA_real_, length(genes), nrow(regressor_data), dimnames = list(genes, rownames(regressor_data)))
@@ -162,13 +259,14 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
     y <- as.matrix(umi[genes_bin, , drop=FALSE])
     res[genes_bin, ] <- switch(residual_type,
       'pearson' = pearson_residual(y, mu, model_pars[genes_bin, 'theta'], min_var = min_variance),
-      'deviance' = deviance_residual(y, mu, model_pars[genes_bin, 'theta'])
+      'deviance' = deviance_residual(y, mu, model_pars[genes_bin, 'theta']),
+      stop('residual_type ', residual_type, ' unknown - only pearson and deviance supported at the moment')
     )
-    if (show_progress) {
+    if (verbosity > 1) {
       setTxtProgressBar(pb, i)
     }
   }
-  if (show_progress) {
+  if (verbosity > 1) {
     close(pb)
   }
   res[res < res_clip_range[1]] <- res_clip_range[1]
@@ -187,7 +285,9 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
 #' @param min_variance Lower bound for the estimated variance for any gene in any cell when calculating pearson residual; default is vst_out$arguments$min_variance
 #' @param cell_attr Data frame of cell meta data
 #' @param bin_size Number of genes to put in each bin (to show progress)
-#' @param show_progress Whether to print progress bar
+#' @param verbosity An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2
+#' @param verbose Deprecated; use verbosity instead
+#' @param show_progress Deprecated; use verbosity instead
 #'
 #' @return A vector of residual variances (after clipping)
 #'
@@ -202,7 +302,23 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
 get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
                              res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
                              min_variance = vst_out$arguments$min_variance,
-                             cell_attr = vst_out$cell_attr, bin_size = 256, show_progress = TRUE) {
+                             cell_attr = vst_out$cell_attr, bin_size = 256,
+                             verbosity = 2, verbose = TRUE, show_progress = TRUE) {
+  # Take care of deprecated arguments
+  args_passed <- names(sapply(match.call(), deparse))[-1]
+  if ('verbose' %in% args_passed) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    verbosity <- as.numeric(verbose)
+  }
+  if ('show_progress' %in% args_passed) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    if (show_progress) {
+      verbosity <- 2
+    } else {
+      verbosity <- min(verbosity, 1)
+    }
+  }
+
   regressor_data <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str)), cell_attr)
   model_pars <- vst_out$model_pars_fit
   if (!is.null(dim(vst_out$model_pars_nonreg))) {
@@ -212,12 +328,12 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
   }
 
   genes <- rownames(umi)[rownames(umi) %in% rownames(model_pars)]
-  if (show_progress) {
+  if (verbosity > 0) {
     message('Calculating variance for residuals of type ', residual_type, ' for ', length(genes), ' genes')
   }
   bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
   max_bin <- max(bin_ind)
-  if (show_progress) {
+  if (verbosity > 1) {
     pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
   }
   res <- matrix(NA_real_, length(genes))
@@ -228,15 +344,16 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
     y <- as.matrix(umi[genes_bin, , drop=FALSE])
     res_mat <- switch(residual_type,
                       'pearson' = pearson_residual(y, mu, model_pars[genes_bin, 'theta'], min_var = min_variance),
-                      'deviance' = deviance_residual(y, mu, model_pars[genes_bin, 'theta']))
+                      'deviance' = deviance_residual(y, mu, model_pars[genes_bin, 'theta']),
+                      stop('residual_type ', residual_type, ' unknown - only pearson and deviance supported at the moment'))
     res_mat[res_mat < res_clip_range[1]] <- res_clip_range[1]
     res_mat[res_mat > res_clip_range[2]] <- res_clip_range[2]
     res[genes_bin] <- row_var(res_mat)
-    if (show_progress) {
+    if (verbosity > 1) {
       setTxtProgressBar(pb, i)
     }
   }
-  if (show_progress) {
+  if (verbosity > 1) {
     close(pb)
   }
   return(res)
@@ -250,7 +367,9 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
 #' @param cell_attr Data frame of cell meta data
 #' @param use_nonreg Use the non-regularized parameter estimates; boolean; default is FALSE
 #' @param bin_size Number of genes to put in each bin (to show progress)
-#' @param show_progress Whether to print progress bar
+#' @param verbosity An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2
+#' @param verbose Deprecated; use verbosity instead
+#' @param show_progress Deprecated; use verbosity instead
 #'
 #' @return A named vector of variances (the average across all cells), one entry per gene.
 #'
@@ -262,7 +381,24 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
 #' res_var <- get_model_var(vst_out)
 #' }
 #'
-get_model_var <- function(vst_out, cell_attr = vst_out$cell_attr, use_nonreg = FALSE, bin_size = 256, show_progress = TRUE) {
+get_model_var <- function(vst_out, cell_attr = vst_out$cell_attr, use_nonreg = FALSE,
+                          bin_size = 256, verbosity = 2,
+                          verbose = TRUE, show_progress = TRUE) {
+  # Take care of deprecated arguments
+  args_passed <- names(sapply(match.call(), deparse))[-1]
+  if ('verbose' %in% args_passed) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    verbosity <- as.numeric(verbose)
+  }
+  if ('show_progress' %in% args_passed) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    if (show_progress) {
+      verbosity <- 2
+    } else {
+      verbosity <- min(verbosity, 1)
+    }
+  }
+
   regressor_data <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str)), cell_attr)
   if (use_nonreg) {
     model_pars <- vst_out$model_pars
@@ -276,12 +412,12 @@ get_model_var <- function(vst_out, cell_attr = vst_out$cell_attr, use_nonreg = F
   }
 
   genes <- rownames(model_pars)
-  if (show_progress) {
+  if (verbosity > 0) {
     message('Calculating model variance for ', length(genes), ' genes')
   }
   bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
   max_bin <- max(bin_ind)
-  if (show_progress) {
+  if (verbosity > 1) {
     pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
   }
   res <- matrix(NA_real_, length(genes))
@@ -291,11 +427,11 @@ get_model_var <- function(vst_out, cell_attr = vst_out$cell_attr, use_nonreg = F
     mu <- exp(tcrossprod(model_pars[genes_bin, -1, drop=FALSE], regressor_data))
     model_var = mu + mu^2 / model_pars[genes_bin, 'theta']
     res[genes_bin] <- rowMeans(model_var)
-    if (show_progress) {
+    if (verbosity > 1) {
       setTxtProgressBar(pb, i)
     }
   }
-  if (show_progress) {
+  if (verbosity > 1) {
     close(pb)
   }
   return(res)

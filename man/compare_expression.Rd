@@ -4,9 +4,23 @@
 \alias{compare_expression}
 \title{Compare gene expression between two groups}
 \usage{
-compare_expression(x, umi, group, val1, val2, method = "LRT",
-  bin_size = 256, cell_attr = x$cell_attr, y = x$y, min_cells = 5,
-  weighted = TRUE, randomize = FALSE, show_progress = TRUE)
+compare_expression(
+  x,
+  umi,
+  group,
+  val1,
+  val2,
+  method = "LRT",
+  bin_size = 256,
+  cell_attr = x$cell_attr,
+  y = x$y,
+  min_cells = 5,
+  weighted = TRUE,
+  randomize = FALSE,
+  verbosity = 2,
+  verbose = TRUE,
+  show_progress = TRUE
+)
 }
 \arguments{
 \item{x}{A list that provides model parameters and optionally meta data; use output of vst function}
@@ -33,7 +47,11 @@ compare_expression(x, umi, group, val1, val2, method = "LRT",
 
 \item{randomize}{Boolean indicating whether to shuffle group labels - only set to TRUE when testing methods}
 
-\item{show_progress}{Show progress bar}
+\item{verbosity}{An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2}
+
+\item{verbose}{Deprecated; use verbosity instead}
+
+\item{show_progress}{Deprecated; use verbosity instead}
 }
 \value{
 Data frame of results

@@ -4,8 +4,12 @@
 \alias{generate}
 \title{Generate data from regularized models.}
 \usage{
-generate(vst_out, genes = rownames(vst_out$model_pars_fit),
-  cell_attr = vst_out$cell_attr, n_cells = nrow(cell_attr))
+generate(
+  vst_out,
+  genes = rownames(vst_out$model_pars_fit),
+  cell_attr = vst_out$cell_attr,
+  n_cells = nrow(cell_attr)
+)
 }
 \arguments{
 \item{vst_out}{A list that provides model parameters and optionally meta data; use output of vst function}
@@ -22,7 +26,7 @@ Generated data as dgCMatrix
 \description{
 Generate data from regularized models. This generates data from the background,
 i.e. no residuals are added to the simulated data. The cell attributes for the
-generated cells are sampled from the input with replacment.
+generated cells are sampled from the input with replacement.
 }
 \examples{
 \donttest{

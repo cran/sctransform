@@ -4,11 +4,18 @@
 \alias{get_residuals}
 \title{Return Pearson or deviance residuals of regularized models}
 \usage{
-get_residuals(vst_out, umi, residual_type = "pearson",
+get_residuals(
+  vst_out,
+  umi,
+  residual_type = "pearson",
   res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
   min_variance = vst_out$arguments$min_variance,
-  cell_attr = vst_out$cell_attr, bin_size = 256,
-  show_progress = TRUE)
+  cell_attr = vst_out$cell_attr,
+  bin_size = 256,
+  verbosity = 2,
+  verbose = TRUE,
+  show_progress = TRUE
+)
 }
 \arguments{
 \item{vst_out}{The output of a vst run}
@@ -25,7 +32,11 @@ get_residuals(vst_out, umi, residual_type = "pearson",
 
 \item{bin_size}{Number of genes to put in each bin (to show progress)}
 
-\item{show_progress}{Whether to print progress bar}
+\item{verbosity}{An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2}
+
+\item{verbose}{Deprecated; use verbosity instead}
+
+\item{show_progress}{Deprecated; use verbosity instead}
 }
 \value{
 A matrix of residuals

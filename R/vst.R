@@ -17,10 +17,11 @@ NULL
 #' @param latent_var_nonreg The non-regularized dependent variables to regress out as a character vector; must match column names in cell_attr; default is NULL
 #' @param n_genes Number of genes to use when estimating parameters (default uses 2000 genes, set to NULL to use all genes)
 #' @param n_cells Number of cells to use when estimating parameters (default uses all cells)
-#' @param method Method to use for initial parameter estimation; one of 'poisson', 'nb_fast', 'nb', 'nb_theta_given'
-#' @param do_regularize Boolean that, if set to FALSE, will bypass parameter regularization and use all genes in first step (ignoring n_genes).
+#' @param method Method to use for initial parameter estimation; one of 'poisson', 'poisson_fast', 'nb_fast', 'nb', 'nb_theta_given', 'glmGamPoi'
+#' @param do_regularize Boolean that, if set to FALSE, will bypass parameter regularization and use all genes in first step (ignoring n_genes); default is FALSE
+#' @param theta_regularization Method to use to regularize theta; use 'log_theta' for the behavior prior to version 0.3; default is 'od_factor'
 #' @param res_clip_range Numeric of length two specifying the min and max values the results will be clipped to; default is c(-sqrt(ncol(umi)), sqrt(ncol(umi)))
-#' @param bin_size Number of genes to put in each bin (to show progress)
+#' @param bin_size Number of genes to process simultaneously; this will determine how often the progress bars are updated and how much memory is being used; default is 500
 #' @param min_cells Only use genes that have been detected in at least this many cells; default is 5
 #' @param residual_type What type of residuals to return; can be 'pearson', 'deviance', or 'none'; default is 'pearson'
 #' @param return_cell_attr Make cell attributes part of the output; default is FALSE
@@ -29,8 +30,11 @@ NULL
 #' @param min_variance Lower bound for the estimated variance for any gene in any cell when calculating pearson residual; default is -Inf
 #' @param bw_adjust Kernel bandwidth adjustment factor used during regurlarization; factor will be applied to output of bw.SJ; default is 3
 #' @param gmean_eps Small value added when calculating geometric mean of a gene to avoid log(0); default is 1
+#' @param theta_estimation_fun Character string indicating which method to use to estimate theta (when method = poisson); default is 'theta.ml', but 'theta.mm' seems to be a good and fast alternative
 #' @param theta_given Named numeric vector of fixed theta values for the genes; will only be used if method is set to nb_theta_given; default is NULL
-#' @param show_progress Whether to print messages and show progress bar
+#' @param verbosity An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2
+#' @param verbose Deprecated; use verbosity instead
+#' @param show_progress Deprecated; use verbosity instead
 #'
 #' @return A list with components
 #' \item{y}{Matrix of transformed data, i.e. Pearson residuals, or deviance residuals; empty if \code{residual_type = 'none'}}
@@ -46,24 +50,30 @@ NULL
 #' \item{arguments}{List of function call arguments}
 #' \item{cell_attr}{Data frame of cell meta data (optional)}
 #' \item{gene_attr}{Data frame with gene attributes such as mean, detection rate, etc. (optional)}
+#' \item{times}{Time stamps at various points in the function}
 #'
 #' @section Details:
 #' In the first step of the algorithm, per-gene glm model parameters are learned. This step can be done
 #' on a subset of genes and/or cells to speed things up.
-#' If \code{method} is set to 'poisson', glm will be called with \code{family = poisson} and
-#' the negative binomial theta parameter will be estimated using the response residuals in
-#' \code{MASS::theta.ml}.
+#' If \code{method} is set to 'poisson', glm is called with \code{family = poisson} and
+#' the negative binomial theta parameter is estimated using the response residuals in
+#' \code{theta_estimation_fun}.
+#' If \code{method} is set to 'poisson_fast', speedglm::speedglm is called with \code{family = poisson} and
+#' the negative binomial theta parameter is estimated using the response residuals in
+#' \code{MASS::theta.mm}.
 #' If \code{method} is set to 'nb_fast', glm coefficients and theta are estimated as in the
 #' 'poisson' method, but coefficients are then re-estimated using a proper negative binomial
 #' model in a second call to glm with
 #' \code{family = MASS::negative.binomial(theta = theta)}.
 #' If \code{method} is set to 'nb', coefficients and theta are estimated by a single call to
 #' \code{MASS::glm.nb}.
+#' If \code{method} is set to 'glmGamPoi', coefficients and theta are estimated by a single call to
+#' \code{glmGamPoi::glm_gp}.
 #'
 #' @import Matrix
 #' @importFrom future.apply future_lapply
-#' @importFrom MASS theta.ml glm.nb negative.binomial
-#' @importFrom stats glm ksmooth model.matrix as.formula approx density poisson var bw.SJ
+#' @importFrom MASS theta.ml theta.mm glm.nb negative.binomial
+#' @importFrom stats glm glm.fit df.residual ksmooth model.matrix as.formula approx density poisson var bw.SJ
 #' @importFrom utils txtProgressBar setTxtProgressBar capture.output
 #' @importFrom methods as
 #'
@@ -83,8 +93,9 @@ vst <- function(umi,
                 n_cells = NULL,
                 method = 'poisson',
                 do_regularize = TRUE,
+                theta_regularization = 'od_factor',
                 res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
-                bin_size = 256,
+                bin_size = 500,
                 min_cells = 5,
                 residual_type = 'pearson',
                 return_cell_attr = FALSE,
@@ -93,34 +104,47 @@ vst <- function(umi,
                 min_variance = -Inf,
                 bw_adjust = 3,
                 gmean_eps = 1,
+                theta_estimation_fun = 'theta.ml',
                 theta_given = NULL,
+                verbosity = 2,
+                verbose = TRUE,
                 show_progress = TRUE) {
   arguments <- as.list(environment())[-c(1, 2)]
-  start_time <- Sys.time()
-  if (is.null(cell_attr)) {
-    cell_attr <- data.frame(row.names = colnames(umi))
+
+  # Take care of deprecated arguments
+  args_passed <- names(sapply(match.call(), deparse))[-1]
+  if ('verbose' %in% args_passed) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+    verbosity <- as.numeric(verbose)
   }
-  known_attr <- c('umi', 'gene', 'log_umi', 'log_gene', 'umi_per_gene', 'log_umi_per_gene')
-  if (all(setdiff(latent_var, colnames(cell_attr)) %in% known_attr)) {
+  if ('show_progress' %in% args_passed) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
     if (show_progress) {
-      message('Calculating cell attributes for input UMI matrix')
+      verbosity <- 2
+    } else {
+      verbosity <- min(verbosity, 1)
     }
-    tmp_attr <- data.frame(umi = colSums(umi),
-                           gene = colSums(umi > 0))
-    tmp_attr$log_umi <- log10(tmp_attr$umi)
-    tmp_attr$log_gene <- log10(tmp_attr$gene)
-    tmp_attr$umi_per_gene <- tmp_attr$umi / tmp_attr$gene
-    tmp_attr$log_umi_per_gene <- log10(tmp_attr$umi_per_gene)
-    cell_attr <- cbind(cell_attr, tmp_attr[, setdiff(colnames(tmp_attr), colnames(cell_attr)), drop = TRUE])
   }
 
-  if (!all(latent_var %in% colnames(cell_attr))) {
-    stop('Not all latent variables present in cell attributes')
-  }
-  if (!is.null(batch_var)) {
-    if (!batch_var %in% colnames(cell_attr)) {
-      stop('Batch variable not present in cell attributes; batch_var should be a column name of cell attributes')
+
+  # Check for suggested package
+  if (method == "glmGamPoi") {
+    glmGamPoi_check <- requireNamespace("glmGamPoi", quietly = TRUE)
+    if (!glmGamPoi_check){
+      stop('Please install the glmGamPoi package. See https://github.com/const-ae/glmGamPoi for details.')
     }
+  }
+  if (method == "poisson_fast") {
+    speedglm_check <- requireNamespace("speedglm", quietly = TRUE)
+    if (!speedglm_check){
+      stop('Please install the speedglm package to use the poisson_fast method.')
+    }
+  }
+
+  times <- list(start_time = Sys.time())
+
+  cell_attr <- make_cell_attr(umi, cell_attr, latent_var, batch_var, latent_var_nonreg, verbosity)
+  if (!is.null(batch_var)) {
     cell_attr[, batch_var] <- as.factor(cell_attr[, batch_var])
     batch_levels <- levels(cell_attr[, batch_var])
   }
@@ -133,7 +157,7 @@ vst <- function(umi,
   genes_log_gmean <- log10(row_gmean(umi, eps = gmean_eps))
 
   if (!do_regularize) {
-    if (show_progress) {
+    if (verbosity > 0) {
       message('do_regularize is set to FALSE, will use all genes')
     }
     n_genes <- NULL
@@ -175,19 +199,31 @@ vst <- function(umi,
 
   bin_ind <- ceiling(x = 1:length(x = genes_step1) / bin_size)
   max_bin <- max(bin_ind)
-  if (show_progress) {
+  if (verbosity > 0) {
     message('Variance stabilizing transformation of count matrix of size ', nrow(umi), ' by ', ncol(umi))
     message('Model formula is ', model_str)
   }
 
-  model_pars <- get_model_pars(genes_step1, bin_size, umi, model_str, cells_step1, method, data_step1, theta_given, show_progress)
+  times$get_model_pars = Sys.time()
+  model_pars <- get_model_pars(genes_step1, bin_size, umi, model_str, cells_step1,
+                               method, data_step1, theta_given, theta_estimation_fun,
+                               verbosity)
+  # make sure theta is not too small
+  min_theta <- 1e-7
+  if (any(model_pars[, 'theta'] < min_theta)) {
+    if (verbosity > 0) {
+      msg <- sprintf('There are %d estimated thetas smaller than %g - will be set to %g', sum(model_pars[, 'theta'] < min_theta), min_theta, min_theta)
+      message(msg)
+    }
+    model_pars[, 'theta'] <- pmax(model_pars[, 'theta'], min_theta)
+  }
 
+
+  times$reg_model_pars = Sys.time()
   if (do_regularize) {
-    model_pars[, 'theta'] <- log10(model_pars[, 'theta'])
     model_pars_fit <- reg_model_pars(model_pars, genes_log_gmean_step1, genes_log_gmean, cell_attr,
-                                     batch_var, cells_step1, genes_step1, umi, bw_adjust, gmean_eps, show_progress)
-    model_pars[, 'theta'] <- 10^model_pars[, 'theta']
-    model_pars_fit[, 'theta'] <- 10^model_pars_fit[, 'theta']
+                                     batch_var, cells_step1, genes_step1, umi, bw_adjust, gmean_eps,
+                                     theta_regularization, verbosity)
     model_pars_outliers <- attr(model_pars_fit, 'outliers')
   } else {
     model_pars_fit <- model_pars
@@ -198,7 +234,7 @@ vst <- function(umi,
   regressor_data <- model.matrix(as.formula(gsub('^y', '', model_str)), cell_attr)
 
   if (!is.null(latent_var_nonreg)) {
-    if (show_progress) {
+    if (verbosity > 0) {
       message('Estimating parameters for following non-regularized variables: ', latent_var_nonreg)
     }
     if (!is.null(batch_var)) {
@@ -207,7 +243,8 @@ vst <- function(umi,
       model_str_nonreg <- paste0('y ~ ', paste(latent_var_nonreg, collapse = ' + '))
     }
 
-    model_pars_nonreg <- get_model_pars_nonreg(genes, bin_size, model_pars_fit, regressor_data, umi, model_str_nonreg, cell_attr, show_progress)
+    times$get_model_pars_nonreg = Sys.time()
+    model_pars_nonreg <- get_model_pars_nonreg(genes, bin_size, model_pars_fit, regressor_data, umi, model_str_nonreg, cell_attr, verbosity)
 
     regressor_data_nonreg <- model.matrix(as.formula(gsub('^y', '', model_str_nonreg)), cell_attr)
     model_pars_final <- cbind(model_pars_fit, model_pars_nonreg)
@@ -222,13 +259,14 @@ vst <- function(umi,
     regressor_data_final <- regressor_data
   }
 
+  times$get_residuals = Sys.time()
   if (!residual_type == 'none') {
-    if (show_progress) {
+    if (verbosity > 0) {
       message('Second step: Get residuals using fitted parameters for ', length(x = genes), ' genes')
     }
     bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
     max_bin <- max(bin_ind)
-    if (show_progress) {
+    if (verbosity > 1) {
       pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
     }
     res <- matrix(NA_real_, length(genes), nrow(regressor_data_final), dimnames = list(genes, rownames(regressor_data_final)))
@@ -238,17 +276,18 @@ vst <- function(umi,
       y <- as.matrix(umi[genes_bin, , drop=FALSE])
       res[genes_bin, ] <- switch(residual_type,
         'pearson' = pearson_residual(y, mu, model_pars_final[genes_bin, 'theta'], min_var = min_variance),
-        'deviance' = deviance_residual(y, mu, model_pars_final[genes_bin, 'theta'])
+        'deviance' = deviance_residual(y, mu, model_pars_final[genes_bin, 'theta']),
+        stop('residual_type ', residual_type, ' unknown - only pearson and deviance supported at the moment')
       )
-      if (show_progress) {
+      if (verbosity > 1) {
         setTxtProgressBar(pb, i)
       }
     }
-    if (show_progress) {
+    if (verbosity > 1) {
       close(pb)
     }
   } else {
-    if (show_progress) {
+    if (verbosity > 0) {
       message('Skip calculation of full residual matrix')
     }
     res <- matrix(data = NA, nrow = 0, ncol = 0)
@@ -268,12 +307,13 @@ vst <- function(umi,
   rm(res)
   gc(verbose = FALSE)
 
+  times$correct_umi = Sys.time()
   if (return_corrected_umi) {
     if (residual_type != 'pearson') {
       warning("Will not return corrected UMI because residual type is not set to 'pearson'")
     } else {
       rv$umi_corrected <- sctransform::correct(rv, do_round = TRUE, do_pos = TRUE,
-                                               show_progress = show_progress)
+                                               verbosity = verbosity)
       rv$umi_corrected <- as(object = rv$umi_corrected, Class = 'dgCMatrix')
     }
   }
@@ -285,8 +325,9 @@ vst <- function(umi,
     rv[['cell_attr']] <- NULL
   }
 
+  times$get_gene_attr = Sys.time()
   if (return_gene_attr) {
-    if (show_progress) {
+    if (verbosity > 0) {
       message('Calculating gene attributes')
     }
     gene_attr <- data.frame(
@@ -300,77 +341,81 @@ vst <- function(umi,
     rv[['gene_attr']] <- gene_attr
   }
 
-  if (show_progress) {
-    message('Wall clock passed: ', capture.output(print(Sys.time() - start_time)))
+  if (verbosity > 0) {
+    message('Wall clock passed: ', capture.output(print(Sys.time() - times$start_time)))
   }
+  times$done = Sys.time()
+  rv$times <- times
   return(rv)
 }
 
 
-get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1, method, data_step1, theta_given, show_progress) {
+get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1,
+                           method, data_step1, theta_given, theta_estimation_fun,
+                           verbosity) {
   bin_ind <- ceiling(x = 1:length(x = genes_step1) / bin_size)
   max_bin <- max(bin_ind)
-  if (show_progress) {
+  if (verbosity > 0) {
     message('Get Negative Binomial regression parameters per gene')
     message('Using ', length(x = genes_step1), ' genes, ', length(x = cells_step1), ' cells')
   }
 
-  if (show_progress) {
+  if (verbosity > 1) {
     pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
   }
   model_pars <- list()
   for (i in 1:max_bin) {
     genes_bin_regress <- genes_step1[bin_ind == i]
     umi_bin <- as.matrix(umi[genes_bin_regress, cells_step1, drop=FALSE])
-    model_pars[[i]] <- do.call(rbind,
-                               future_lapply(
-                                 X = genes_bin_regress,
-                                 FUN = function(j) {
-                                   y <- umi_bin[j, ]
-                                   if (method == 'poisson') {
-                                     fit <- glm(as.formula(model_str), data = data_step1, family = poisson)
-                                     theta <- as.numeric(x = theta.ml(y = y, mu = fit$fitted))
-                                     return(c(theta, fit$coefficients))
-                                   }
-                                   if (method == 'nb_theta_given') {
-                                     theta <- theta_given[j]
-                                     fit2 <- 0
-                                     try(fit2 <- glm(as.formula(model_str), data = data_step1, family = negative.binomial(theta=theta)), silent=TRUE)
-                                     if (inherits(x = fit2, what = 'numeric')) {
-                                       return(c(theta, glm(as.formula(model_str), data = data_step1, family = poisson)$coefficients))
-                                     } else {
-                                       return(c(theta, fit2$coefficients))
-                                     }
-                                   }
-                                   if (method == 'nb_fast') {
-                                     fit <- glm(as.formula(model_str), data = data_step1, family = poisson)
-                                     theta <- as.numeric(x = theta.ml(y = y, mu = fit$fitted))
-                                     fit2 <- 0
-                                     try(fit2 <- glm(as.formula(model_str), data = data_step1, family = negative.binomial(theta=theta)), silent=TRUE)
-                                     if (inherits(x = fit2, what = 'numeric')) {
-                                       return(c(theta, fit$coefficients))
-                                     } else {
-                                       return(c(theta, fit2$coefficients))
-                                     }
-                                   }
-                                   if (method == 'nb') {
-                                     fit <- 0
-                                     try(fit <- glm.nb(as.formula(model_str), data = data_step1), silent=TRUE)
-                                     if (inherits(x = fit, what = 'numeric')) {
-                                       fit <- glm(as.formula(model_str), data = data_step1, family = poisson)
-                                       fit$theta <- as.numeric(x = theta.ml(y = y, mu = fit$fitted))
-                                     }
-                                     return(c(fit$theta, fit$coefficients))
-                                   }
-                                 }
-                               )
+    if (!is.null(theta_given)) {
+      theta_given_bin <- theta_given[genes_bin_regress]
+    }
+
+    # umi_bin is a matrix of counts - we want a model per row
+    # if there are multiple workers, split up the matrix in chunks of n rows
+    # where n is the number of workers
+    n_workers <- 1
+    if (future::supportsMulticore()) {
+      n_workers <- future::nbrOfWorkers()
+    }
+    genes_per_worker <- nrow(umi_bin) / n_workers + .Machine$double.eps
+    index_vec <- 1:nrow(umi_bin)
+    index_lst <- split(index_vec, ceiling(index_vec/genes_per_worker))
+
+    # the index list will have at most n_workers entries, each one defining which genes to work on
+    par_lst <- future_lapply(
+      X = index_lst,
+      FUN = function(indices) {
+        umi_bin_worker <- umi_bin[indices, , drop = FALSE]
+        if (method == 'poisson') {
+          return(fit_poisson(umi = umi_bin_worker, model_str = model_str, data = data_step1, theta_estimation_fun = theta_estimation_fun))
+        }
+        if (method == 'poisson_fast') {
+          return(fit_poisson_fast(umi = umi_bin_worker, model_str = model_str, data = data_step1))
+        }
+        if (method == 'nb_theta_given') {
+          theta_given_bin_worker <- theta_given_bin[indices]
+          return(fit_nb_theta_given(umi = umi_bin_worker, model_str = model_str, data = data_step1, theta_given = theta_given_bin_worker))
+        }
+        if (method == 'nb_fast') {
+          return(fit_nb_fast(umi = umi_bin_worker, model_str = model_str, data = data_step1, theta_estimation_fun = theta_estimation_fun))
+        }
+        if (method == 'nb') {
+          return(fit_nb(umi = umi_bin_worker, model_str = model_str, data = data_step1))
+        }
+        if (method == "glmGamPoi") {
+          return(fit_glmGamPoi(umi = umi_bin_worker, model_str = model_str, data = data_step1))
+        }
+      }
     )
-    if (show_progress) {
+    model_pars[[i]] <- do.call(rbind, par_lst)
+
+    if (verbosity > 1) {
       setTxtProgressBar(pb, i)
     }
   }
   model_pars <- do.call(rbind, model_pars)
-  if (show_progress) {
+  if (verbosity > 1) {
     close(pb)
   }
   rownames(model_pars) <- genes_step1
@@ -378,10 +423,10 @@ get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1, m
   return(model_pars)
 }
 
-get_model_pars_nonreg <- function(genes, bin_size, model_pars_fit, regressor_data, umi, model_str_nonreg, cell_attr, show_progress) {
+get_model_pars_nonreg <- function(genes, bin_size, model_pars_fit, regressor_data, umi, model_str_nonreg, cell_attr, verbosity) {
   bin_ind <- ceiling(x = 1:length(x = genes) / bin_size)
   max_bin <- max(bin_ind)
-  if (show_progress) {
+  if (verbosity > 1) {
     pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
   }
   model_pars_nonreg <- list()
@@ -397,11 +442,11 @@ get_model_pars_nonreg <- function(genes, bin_size, model_pars_fit, regressor_dat
                                         fit <- glm(as.formula(model_str_nonreg), data = cell_attr, family = fam, offset=offs)
                                         return(fit$coefficients)
                                       }))
-    if (show_progress) {
+    if (verbosity > 1) {
       setTxtProgressBar(pb, i)
     }
   }
-  if (show_progress) {
+  if (verbosity > 1) {
     close(pb)
   }
   model_pars_nonreg <- do.call(rbind, model_pars_nonreg)
@@ -411,14 +456,29 @@ get_model_pars_nonreg <- function(genes, bin_size, model_pars_fit, regressor_dat
 
 reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, cell_attr,
                            batch_var, cells_step1, genes_step1, umi, bw_adjust, gmean_eps,
-                           verbose) {
+                           theta_regularization, verbosity) {
   genes <- names(genes_log_gmean)
+
+  # we don't regularize theta directly
+  # prior to v0.3 we regularized log10(theta)
+  # now we transform to overdispersion factor
+  # variance of NB is mu * (1 + mu / theta)
+  # (1 + mu / theta) is what we call overdispersion factor here
+  dispersion_par <- switch(theta_regularization,
+    'log_theta' = log10(model_pars[, 'theta']),
+    'od_factor' = log10(1 + 10^genes_log_gmean_step1 / model_pars[, 'theta']),
+    stop('theta_regularization ', theta_regularization, ' unknown - only log_theta and od_factor supported at the moment')
+  )
+
+  model_pars <- model_pars[, colnames(model_pars) != 'theta']
+  model_pars <- cbind(dispersion_par, model_pars)
+
   # look for outliers in the parameters
   # outliers are those that do not fit the overall relationship with the mean at all
   outliers <- apply(model_pars, 2, function(y) is_outlier(y, genes_log_gmean_step1))
   outliers <- apply(outliers, 1, any)
   if (sum(outliers) > 0) {
-    if (verbose) {
+    if (verbosity > 0) {
       message('Found ', sum(outliers), ' outliers - those will be ignored in fitting/regularization step\n')
     }
     model_pars <- model_pars[!outliers, ]
@@ -438,9 +498,9 @@ reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, c
   model_pars_fit <- matrix(NA_real_, length(genes), ncol(model_pars),
                            dimnames = list(genes, colnames(model_pars)))
 
-  # fit / regularize theta
-  model_pars_fit[o, 'theta'] <- ksmooth(x = genes_log_gmean_step1, y = model_pars[, 'theta'],
-                                             x.points = x_points, bandwidth = bw, kernel='normal')$y
+  # fit / regularize dispersion parameter
+  model_pars_fit[o, 'dispersion_par'] <- ksmooth(x = genes_log_gmean_step1, y = model_pars[, 'dispersion_par'],
+                                                 x.points = x_points, bandwidth = bw, kernel='normal')$y
 
   if (is.null(batch_var)){
     # global fit / regularization for all coefficients
@@ -456,7 +516,7 @@ reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, c
       #batch_genes_log_gmean_step1 <- log10(rowMeans(umi[genes_step1, sel]))
       batch_genes_log_gmean_step1 <- log10(row_gmean(umi[genes_step1, sel], eps = gmean_eps))
       if (any(is.infinite(batch_genes_log_gmean_step1))) {
-        if (verbose) {
+        if (verbosity > 0) {
           message('Some genes not detected in batch ', b, ' -- assuming a low mean.')
         }
         batch_genes_log_gmean_step1[is.infinite(batch_genes_log_gmean_step1) & batch_genes_log_gmean_step1 < 0] <- min(batch_genes_log_gmean_step1[!is.infinite(batch_genes_log_gmean_step1)])
@@ -473,6 +533,15 @@ reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, c
       }
     }
   }
+
+  # back-transform dispersion parameter to theta
+  theta <- switch(theta_regularization,
+    'log_theta' = 10^model_pars_fit[, 'dispersion_par'],
+    'od_factor' = 10^genes_log_gmean / (10^model_pars_fit[, 'dispersion_par'] - 1)
+  )
+  model_pars_fit <- model_pars_fit[, colnames(model_pars_fit) != 'dispersion_par']
+  model_pars_fit <- cbind(theta, model_pars_fit)
+
   attr(model_pars_fit, 'outliers') <- outliers
   return(model_pars_fit)
 }

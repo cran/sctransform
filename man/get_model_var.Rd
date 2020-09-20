@@ -4,8 +4,15 @@
 \alias{get_model_var}
 \title{Return average variance under negative binomial model}
 \usage{
-get_model_var(vst_out, cell_attr = vst_out$cell_attr,
-  use_nonreg = FALSE, bin_size = 256, show_progress = TRUE)
+get_model_var(
+  vst_out,
+  cell_attr = vst_out$cell_attr,
+  use_nonreg = FALSE,
+  bin_size = 256,
+  verbosity = 2,
+  verbose = TRUE,
+  show_progress = TRUE
+)
 }
 \arguments{
 \item{vst_out}{The output of a vst run}
@@ -16,7 +23,11 @@ get_model_var(vst_out, cell_attr = vst_out$cell_attr,
 
 \item{bin_size}{Number of genes to put in each bin (to show progress)}
 
-\item{show_progress}{Whether to print progress bar}
+\item{verbosity}{An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2}
+
+\item{verbose}{Deprecated; use verbosity instead}
+
+\item{show_progress}{Deprecated; use verbosity instead}
 }
 \value{
 A named vector of variances (the average across all cells), one entry per gene.

@@ -4,14 +4,33 @@
 \alias{vst}
 \title{Variance stabilizing transformation for UMI count data}
 \usage{
-vst(umi, cell_attr = NULL, latent_var = c("log_umi"),
-  batch_var = NULL, latent_var_nonreg = NULL, n_genes = 2000,
-  n_cells = NULL, method = "poisson", do_regularize = TRUE,
+vst(
+  umi,
+  cell_attr = NULL,
+  latent_var = c("log_umi"),
+  batch_var = NULL,
+  latent_var_nonreg = NULL,
+  n_genes = 2000,
+  n_cells = NULL,
+  method = "poisson",
+  do_regularize = TRUE,
+  theta_regularization = "od_factor",
   res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
-  bin_size = 256, min_cells = 5, residual_type = "pearson",
-  return_cell_attr = FALSE, return_gene_attr = TRUE,
-  return_corrected_umi = FALSE, min_variance = -Inf, bw_adjust = 3,
-  gmean_eps = 1, theta_given = NULL, show_progress = TRUE)
+  bin_size = 500,
+  min_cells = 5,
+  residual_type = "pearson",
+  return_cell_attr = FALSE,
+  return_gene_attr = TRUE,
+  return_corrected_umi = FALSE,
+  min_variance = -Inf,
+  bw_adjust = 3,
+  gmean_eps = 1,
+  theta_estimation_fun = "theta.ml",
+  theta_given = NULL,
+  verbosity = 2,
+  verbose = TRUE,
+  show_progress = TRUE
+)
 }
 \arguments{
 \item{umi}{A matrix of UMI counts with genes as rows and cells as columns}
@@ -28,13 +47,15 @@ vst(umi, cell_attr = NULL, latent_var = c("log_umi"),
 
 \item{n_cells}{Number of cells to use when estimating parameters (default uses all cells)}
 
-\item{method}{Method to use for initial parameter estimation; one of 'poisson', 'nb_fast', 'nb', 'nb_theta_given'}
+\item{method}{Method to use for initial parameter estimation; one of 'poisson', 'poisson_fast', 'nb_fast', 'nb', 'nb_theta_given', 'glmGamPoi'}
 
-\item{do_regularize}{Boolean that, if set to FALSE, will bypass parameter regularization and use all genes in first step (ignoring n_genes).}
+\item{do_regularize}{Boolean that, if set to FALSE, will bypass parameter regularization and use all genes in first step (ignoring n_genes); default is FALSE}
+
+\item{theta_regularization}{Method to use to regularize theta; use 'log_theta' for the behavior prior to version 0.3; default is 'od_factor'}
 
 \item{res_clip_range}{Numeric of length two specifying the min and max values the results will be clipped to; default is c(-sqrt(ncol(umi)), sqrt(ncol(umi)))}
 
-\item{bin_size}{Number of genes to put in each bin (to show progress)}
+\item{bin_size}{Number of genes to process simultaneously; this will determine how often the progress bars are updated and how much memory is being used; default is 500}
 
 \item{min_cells}{Only use genes that have been detected in at least this many cells; default is 5}
 
@@ -52,9 +73,15 @@ vst(umi, cell_attr = NULL, latent_var = c("log_umi"),
 
 \item{gmean_eps}{Small value added when calculating geometric mean of a gene to avoid log(0); default is 1}
 
+\item{theta_estimation_fun}{Character string indicating which method to use to estimate theta (when method = poisson); default is 'theta.ml', but 'theta.mm' seems to be a good and fast alternative}
+
 \item{theta_given}{Named numeric vector of fixed theta values for the genes; will only be used if method is set to nb_theta_given; default is NULL}
 
-\item{show_progress}{Whether to print messages and show progress bar}
+\item{verbosity}{An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2}
+
+\item{verbose}{Deprecated; use verbosity instead}
+
+\item{show_progress}{Deprecated; use verbosity instead}
 }
 \value{
 A list with components
@@ -71,6 +98,7 @@ A list with components
 \item{arguments}{List of function call arguments}
 \item{cell_attr}{Data frame of cell meta data (optional)}
 \item{gene_attr}{Data frame with gene attributes such as mean, detection rate, etc. (optional)}
+\item{times}{Time stamps at various points in the function}
 }
 \description{
 Apply variance stabilizing transformation to UMI count data using a regularized Negative Binomial regression model.
@@ -83,15 +111,20 @@ initial model parameters.
 
 In the first step of the algorithm, per-gene glm model parameters are learned. This step can be done
 on a subset of genes and/or cells to speed things up.
-If \code{method} is set to 'poisson', glm will be called with \code{family = poisson} and
-the negative binomial theta parameter will be estimated using the response residuals in
-\code{MASS::theta.ml}.
+If \code{method} is set to 'poisson', glm is called with \code{family = poisson} and
+the negative binomial theta parameter is estimated using the response residuals in
+\code{theta_estimation_fun}.
+If \code{method} is set to 'poisson_fast', speedglm::speedglm is called with \code{family = poisson} and
+the negative binomial theta parameter is estimated using the response residuals in
+\code{MASS::theta.mm}.
 If \code{method} is set to 'nb_fast', glm coefficients and theta are estimated as in the
 'poisson' method, but coefficients are then re-estimated using a proper negative binomial
 model in a second call to glm with
 \code{family = MASS::negative.binomial(theta = theta)}.
 If \code{method} is set to 'nb', coefficients and theta are estimated by a single call to
 \code{MASS::glm.nb}.
+If \code{method} is set to 'glmGamPoi', coefficients and theta are estimated by a single call to
+\code{glmGamPoi::glm_gp}.
 }
 
 \examples{
