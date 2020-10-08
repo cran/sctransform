@@ -15,21 +15,20 @@
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' vst_out <- vst(pbmc, return_gene_attr = TRUE)
 #' plot_model_pars(vst_out)
 #' }
 #'
 plot_model_pars <- function(vst_out, show_theta = FALSE, show_var = FALSE,
-                            verbosity = 2, verbose = TRUE, show_progress = TRUE) {
+                            verbosity = 2, verbose = NULL, show_progress = NULL) {
   # Take care of deprecated arguments
-  args_passed <- names(sapply(match.call(), deparse))[-1]
-  if ('verbose' %in% args_passed) {
-    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(verbose)) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     verbosity <- as.numeric(verbose)
   }
-  if ('show_progress' %in% args_passed) {
-    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(show_progress)) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     if (show_progress) {
       verbosity <- 2
     } else {
@@ -162,9 +161,9 @@ get_nb_fit <- function(x, umi, gene, cell_attr, as_poisson = FALSE) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' vst_out <- vst(pbmc, return_cell_attr = TRUE)
-#' plot_model(vst_out, pbmc, 'PPBP')
+#' plot_model(vst_out, pbmc, 'EMC4')
 #' }
 #'
 plot_model <- function(x, umi, goi, x_var = x$arguments$latent_var[1], cell_attr = x$cell_attr,

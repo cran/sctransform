@@ -28,8 +28,8 @@ vst(
   theta_estimation_fun = "theta.ml",
   theta_given = NULL,
   verbosity = 2,
-  verbose = TRUE,
-  show_progress = TRUE
+  verbose = NULL,
+  show_progress = NULL
 )
 }
 \arguments{
@@ -47,7 +47,7 @@ vst(
 
 \item{n_cells}{Number of cells to use when estimating parameters (default uses all cells)}
 
-\item{method}{Method to use for initial parameter estimation; one of 'poisson', 'poisson_fast', 'nb_fast', 'nb', 'nb_theta_given', 'glmGamPoi'}
+\item{method}{Method to use for initial parameter estimation; one of 'poisson', 'qpoisson', 'nb_fast', 'nb', 'nb_theta_given', 'glmGamPoi'}
 
 \item{do_regularize}{Boolean that, if set to FALSE, will bypass parameter regularization and use all genes in first step (ignoring n_genes); default is FALSE}
 
@@ -111,16 +111,15 @@ initial model parameters.
 
 In the first step of the algorithm, per-gene glm model parameters are learned. This step can be done
 on a subset of genes and/or cells to speed things up.
-If \code{method} is set to 'poisson', glm is called with \code{family = poisson} and
+If \code{method} is set to 'poisson', a poisson regression is done and
 the negative binomial theta parameter is estimated using the response residuals in
 \code{theta_estimation_fun}.
-If \code{method} is set to 'poisson_fast', speedglm::speedglm is called with \code{family = poisson} and
-the negative binomial theta parameter is estimated using the response residuals in
-\code{MASS::theta.mm}.
-If \code{method} is set to 'nb_fast', glm coefficients and theta are estimated as in the
+If \code{method} is set to 'qpoisson', coefficients and overdispersion (phi) are estimated by quasi 
+poisson regression and theta is estimated based on phi and the mean fitted value - this is currently 
+the fastest method with results very similar to 'glmGamPoi'
+If \code{method} is set to 'nb_fast', coefficients and theta are estimated as in the
 'poisson' method, but coefficients are then re-estimated using a proper negative binomial
-model in a second call to glm with
-\code{family = MASS::negative.binomial(theta = theta)}.
+model in a second call to glm with \code{family = MASS::negative.binomial(theta = theta)}.
 If \code{method} is set to 'nb', coefficients and theta are estimated by a single call to
 \code{MASS::glm.nb}.
 If \code{method} is set to 'glmGamPoi', coefficients and theta are estimated by a single call to

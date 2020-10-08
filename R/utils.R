@@ -101,12 +101,11 @@ row_mean_grouped <- function(x, group) {
 #' @param x matrix of class \code{matrix} or \code{dgCMatrix}
 #'
 #' @return variances
+#' 
+#' @importFrom matrixStats rowVars
 row_var <- function(x) {
   if (inherits(x = x, what = 'matrix')) {
-    ret <- switch(storage.mode(x),
-                  'double' = row_var_dense_d(x),
-                  'integer' = row_var_dense_i(x),
-                  stop('Unknown matrix storage mode'))
+    ret <- rowVars(x)
     names(ret) <- rownames(x)
     return(ret)
   }
@@ -209,8 +208,8 @@ deviance_residual <- function(y, mu, theta, wt=1) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' vst_out <- vst(pbmc)
+#' \donttest{
+#' vst_out <- vst(pbmc, return_cell_attr = TRUE)
 #' pearson_res <- get_residuals(vst_out, pbmc)
 #' deviance_res <- get_residuals(vst_out, pbmc, residual_type = 'deviance')
 #' }
@@ -219,22 +218,21 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
                           res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
                           min_variance = vst_out$arguments$min_variance,
                           cell_attr = vst_out$cell_attr, bin_size = 256,
-                          verbosity = 2, verbose = TRUE, show_progress = TRUE) {
+                          verbosity = vst_out$arguments$verbosity, 
+                          verbose = NULL, show_progress = NULL) {
   # Take care of deprecated arguments
-  args_passed <- names(sapply(match.call(), deparse))[-1]
-  if ('verbose' %in% args_passed) {
-    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(verbose)) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     verbosity <- as.numeric(verbose)
   }
-  if ('show_progress' %in% args_passed) {
-    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(show_progress)) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     if (show_progress) {
       verbosity <- 2
     } else {
       verbosity <- min(verbosity, 1)
     }
   }
-
   regressor_data <- model.matrix(as.formula(gsub('^y', '', vst_out$model_str)), cell_attr)
   model_pars <- vst_out$model_pars_fit
   if (!is.null(dim(vst_out$model_pars_nonreg))) {
@@ -294,8 +292,8 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' vst_out <- vst(pbmc)
+#' \donttest{
+#' vst_out <- vst(pbmc, return_cell_attr = TRUE)
 #' res_var <- get_residual_var(vst_out, pbmc)
 #' }
 #'
@@ -303,15 +301,15 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
                              res_clip_range = c(-sqrt(ncol(umi)), sqrt(ncol(umi))),
                              min_variance = vst_out$arguments$min_variance,
                              cell_attr = vst_out$cell_attr, bin_size = 256,
-                             verbosity = 2, verbose = TRUE, show_progress = TRUE) {
+                             verbosity = vst_out$arguments$verbosity, 
+                             verbose = NULL, show_progress = NULL) {
   # Take care of deprecated arguments
-  args_passed <- names(sapply(match.call(), deparse))[-1]
-  if ('verbose' %in% args_passed) {
-    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(verbose)) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     verbosity <- as.numeric(verbose)
   }
-  if ('show_progress' %in% args_passed) {
-    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(show_progress)) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     if (show_progress) {
       verbosity <- 2
     } else {
@@ -376,22 +374,21 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' vst_out <- vst(pbmc)
+#' \donttest{
+#' vst_out <- vst(pbmc, return_cell_attr = TRUE)
 #' res_var <- get_model_var(vst_out)
 #' }
 #'
 get_model_var <- function(vst_out, cell_attr = vst_out$cell_attr, use_nonreg = FALSE,
                           bin_size = 256, verbosity = 2,
-                          verbose = TRUE, show_progress = TRUE) {
+                          verbose = NULL, show_progress = NULL) {
   # Take care of deprecated arguments
-  args_passed <- names(sapply(match.call(), deparse))[-1]
-  if ('verbose' %in% args_passed) {
-    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(verbose)) {
+    warning("The 'verbose' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     verbosity <- as.numeric(verbose)
   }
-  if ('show_progress' %in% args_passed) {
-    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead.", immediate. = TRUE)
+  if (!is.null(show_progress)) {
+    warning("The 'show_progress' argument is deprecated as of v0.3. Use 'verbosity' instead. (in sctransform::vst)", immediate. = TRUE, call. = FALSE)
     if (show_progress) {
       verbosity <- 2
     } else {

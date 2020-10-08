@@ -14,15 +14,23 @@ For usage examples see vignettes in inst/doc or use the built-in help after inst
 `?sctransform::vst`  
 
 Available vignettes:  
-[Variance stabilizing transformation](https://rawgit.com/ChristophH/sctransform/develop/supplement/variance_stabilizing_transformation.html)  
-[Using sctransform in Seurat](https://rawgit.com/ChristophH/sctransform/develop/supplement/seurat.html)  
+[Variance stabilizing transformation](https://rawgit.com/ChristophH/sctransform/master/supplement/variance_stabilizing_transformation.html)  
+[Using sctransform in Seurat](https://rawgit.com/ChristophH/sctransform/master/supplement/seurat.html)  
 
 ## News
-The latest version of `sctransform` now supports the [glmGamPoi](https://github.com/const-ae/glmGamPoi) package to speed up the model fitting step. You can see more about the different methods supported and how they compare in terms of results and speed [in this new vignette](https://rawgit.com/ChristophH/sctransform/develop/supplement/method_comparison.html).
+For a detailed change log have a look at the file [NEWS.md](https://github.com/ChristophH/sctransform/blob/master/NEWS.md)
 
-Also note that default theta regularization is now based on overdispersion factor (`1 + m / theta` where m is the geometric mean of the observed counts) not `log10(theta)`. The old behavior is still available via `theta_regularization` parameter. You can see how this changes (or doesn't change) the results [in this new vignette](https://rawgit.com/ChristophH/sctransform/develop/supplement/theta_regularization.html).
+### v0.3.1
+This release fixes a performance regression when `sctransform::vst` was called via `do.call`, as is the case in the Seurat wrapper. 
 
-For a detailed change log have a look at the file [NEWS.md](https://github.com/ChristophH/sctransform/blob/develop/NEWS.md)
+Additionally, model fitting is significantly faster now, because we use a fast Rcpp quasi poisson regression implementation (based on `Rfast` package). This applies to methods `poisson`, `qpoisson` and `nb_fast`.
+
+The `qpoisson` method is new and uses the dispersion parameter from the quasi poisson regression directly to estimate `theta` for the NB model. This can speed up the model fitting step considerably, while giving similar results to the other methods. [This vignette](https://rawgit.com/ChristophH/sctransform/master/supplement/method_comparison.html) compares the methods.
+
+### v0.3
+The latest version of `sctransform` now supports the [glmGamPoi](https://github.com/const-ae/glmGamPoi) package to speed up the model fitting step. You can see more about the different methods supported and how they compare in terms of results and speed [in this new vignette](https://rawgit.com/ChristophH/sctransform/master/supplement/method_comparison.html).
+
+Also note that default theta regularization is now based on overdispersion factor (`1 + m / theta` where m is the geometric mean of the observed counts) not `log10(theta)`. The old behavior is still available via `theta_regularization` parameter. You can see how this changes (or doesn't change) the results [in this new vignette](https://rawgit.com/ChristophH/sctransform/master/supplement/theta_regularization.html).
 
 
 ## Reference

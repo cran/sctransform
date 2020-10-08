@@ -2,31 +2,26 @@
 
 fit_poisson <- function(umi, model_str, data, theta_estimation_fun) {
   regressor_data <- model.matrix(as.formula(gsub('^y', '', model_str)), data)
-  fam <- poisson()
-  par_mat <- apply(umi, 1, function(y) {
-    fit <- glm.fit(x = regressor_data, y = y, family = fam)
+  dfr <- ncol(umi) - ncol(regressor_data)
+  par_mat <- t(apply(umi, 1, function(y) {
+    fit <- qpois_reg(regressor_data, y, 1e-9, 100, 1.0001, TRUE)
     theta <- switch(theta_estimation_fun,
       'theta.ml' = as.numeric(x = theta.ml(y = y, mu = fit$fitted)),
-      'theta.mm' = as.numeric(x = theta.mm(y = y, mu = fit$fitted, dfr = df.residual(fit))),
+      'theta.mm' = as.numeric(x = theta.mm(y = y, mu = fit$fitted, dfr = dfr)),
       stop('theta_estimation_fun ', theta_estimation_fun, ' unknown - only theta.ml and theta.mm supported at the moment')
     )
     return(c(theta, fit$coefficients))
-  })
-  return(t(par_mat))
+  }))
+  return(par_mat)
 }
 
-fit_poisson_fast <- function(umi, model_str, data) {
+fit_qpoisson <- function(umi, model_str, data) {
   regressor_data <- model.matrix(as.formula(gsub('^y', '', model_str)), data)
-  dfr <- ncol(umi) - ncol(regressor_data)
-  fam <- poisson()
   par_mat <- t(apply(umi, 1, function(y) {
-    speedglm::speedglm.wfit(y = y, X = regressor_data, family = fam)$coefficients
+    fit <- qpois_reg(regressor_data, y, 1e-9, 100, 1.0001, FALSE)
+    return(c(fit$theta.guesstimate, fit$coefficients))
   }))
-  mu_mat <- exp(tcrossprod(par_mat, regressor_data))
-  theta <- sapply(1:nrow(umi), function(i) {
-    theta.mm(y = umi[i, ], mu = mu_mat[i, ], dfr = dfr)
-  })
-  return(cbind(theta, par_mat))
+  return(par_mat)
 }
 
 fit_nb_theta_given <- function(umi, model_str, data, theta_given) {
@@ -46,12 +41,12 @@ fit_nb_theta_given <- function(umi, model_str, data, theta_given) {
 
 fit_nb_fast <- function(umi, model_str, data, theta_estimation_fun) {
   regressor_data <- model.matrix(as.formula(gsub('^y', '', model_str)), data)
-  fam <- poisson()
+  dfr <- ncol(umi) - ncol(regressor_data)
   par_mat <- apply(umi, 1, function(y) {
-    fit <- glm.fit(x = regressor_data, y = y, family = fam)
+    fit <- qpois_reg(regressor_data, y, 1e-9, 100, 1.0001, TRUE)
     theta <- switch(theta_estimation_fun,
                     'theta.ml' = as.numeric(x = theta.ml(y = y, mu = fit$fitted)),
-                    'theta.mm' = as.numeric(x = theta.mm(y = y, mu = fit$fitted, dfr = df.residual(fit))),
+                    'theta.mm' = as.numeric(x = theta.mm(y = y, mu = fit$fitted, dfr = dfr)),
                     stop('theta_estimation_fun ', theta_estimation_fun, ' unknown - only theta.ml and theta.mm supported at the moment')
     )
     fit2 <- 0

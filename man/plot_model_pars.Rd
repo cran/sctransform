@@ -9,8 +9,8 @@ plot_model_pars(
   show_theta = FALSE,
   show_var = FALSE,
   verbosity = 2,
-  verbose = TRUE,
-  show_progress = TRUE
+  verbose = NULL,
+  show_progress = NULL
 )
 }
 \arguments{
@@ -33,7 +33,7 @@ A ggplot object
 Plot estimated and fitted model parameters
 }
 \examples{
-\dontrun{
+\donttest{
 vst_out <- vst(pbmc, return_gene_attr = TRUE)
 plot_model_pars(vst_out)
 }

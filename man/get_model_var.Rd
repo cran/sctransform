@@ -10,8 +10,8 @@ get_model_var(
   use_nonreg = FALSE,
   bin_size = 256,
   verbosity = 2,
-  verbose = TRUE,
-  show_progress = TRUE
+  verbose = NULL,
+  show_progress = NULL
 )
 }
 \arguments{
@@ -36,8 +36,8 @@ A named vector of variances (the average across all cells), one entry per gene.
 This is based on the formula var = mu + mu^2 / theta
 }
 \examples{
-\dontrun{
-vst_out <- vst(pbmc)
+\donttest{
+vst_out <- vst(pbmc, return_cell_attr = TRUE)
 res_var <- get_model_var(vst_out)
 }
 

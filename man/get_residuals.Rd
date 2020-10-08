@@ -12,9 +12,9 @@ get_residuals(
   min_variance = vst_out$arguments$min_variance,
   cell_attr = vst_out$cell_attr,
   bin_size = 256,
-  verbosity = 2,
-  verbose = TRUE,
-  show_progress = TRUE
+  verbosity = vst_out$arguments$verbosity,
+  verbose = NULL,
+  show_progress = NULL
 )
 }
 \arguments{
@@ -45,8 +45,8 @@ A matrix of residuals
 Return Pearson or deviance residuals of regularized models
 }
 \examples{
-\dontrun{
-vst_out <- vst(pbmc)
+\donttest{
+vst_out <- vst(pbmc, return_cell_attr = TRUE)
 pearson_res <- get_residuals(vst_out, pbmc)
 deviance_res <- get_residuals(vst_out, pbmc, residual_type = 'deviance')
 }

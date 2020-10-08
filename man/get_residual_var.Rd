@@ -12,9 +12,9 @@ get_residual_var(
   min_variance = vst_out$arguments$min_variance,
   cell_attr = vst_out$cell_attr,
   bin_size = 256,
-  verbosity = 2,
-  verbose = TRUE,
-  show_progress = TRUE
+  verbosity = vst_out$arguments$verbosity,
+  verbose = NULL,
+  show_progress = NULL
 )
 }
 \arguments{
@@ -45,8 +45,8 @@ A vector of residual variances (after clipping)
 This never creates the full residual matrix and can be used to determine highly variable genes.
 }
 \examples{
-\dontrun{
-vst_out <- vst(pbmc)
+\donttest{
+vst_out <- vst(pbmc, return_cell_attr = TRUE)
 res_var <- get_residual_var(vst_out, pbmc)
 }
 

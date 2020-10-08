@@ -18,8 +18,8 @@ compare_expression(
   weighted = TRUE,
   randomize = FALSE,
   verbosity = 2,
-  verbose = TRUE,
-  show_progress = TRUE
+  verbose = NULL,
+  show_progress = NULL
 )
 }
 \arguments{
@@ -58,13 +58,4 @@ Data frame of results
 }
 \description{
 Compare gene expression between two groups
-}
-\examples{
-\dontrun{
-vst_out <- vst(pbmc, return_cell_attr = TRUE)
-# create fake clusters
-clustering <- 1:ncol(pbmc) \%/\% 100
-res <- compare_expression(x = vst_out, umi = pbmc, group = clustering, val1 = 0, val2 = 3)
-}
-
 }

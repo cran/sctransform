@@ -1,8 +1,9 @@
-#include <Rcpp.h>
-#include <RcppEigen.h>
+// [[Rcpp::depends(RcppArmadillo)]]
+
+#include "RcppArmadillo.h"
 
 using namespace Rcpp;
-// [[Rcpp::depends(RcppEigen)]]
+
 
 // [[Rcpp::export]]
 NumericVector row_mean_dgcmatrix(NumericVector x, IntegerVector i, int rows, int cols) {
@@ -110,24 +111,46 @@ NumericVector row_var_dgcmatrix(NumericVector x, IntegerVector i, int rows, int 
   return rowvar;
 }
 
-// [[Rcpp::export]]
-NumericVector row_var_dense_d(Eigen::Map<Eigen::MatrixXd> x) {
-  NumericVector out(x.rows());
-  for(int i=0; i < x.rows(); ++i){
-    Eigen::ArrayXd r = x.row(i).array();
-    double rowMean = r.mean();
-    out[i] = (r - rowMean).square().sum() / (x.cols() - 1);
-  }
-  return out;
-}
 
+// The following function was taken from the Rfast package
+// with kind permission from the authors.
+// It has been slightly adopted for our use case here.
 // [[Rcpp::export]]
-NumericVector row_var_dense_i(Eigen::Map<Eigen::MatrixXi> x) {
-  NumericVector out(x.rows());
-  for(int i=0; i < x.rows(); ++i){
-    Eigen::ArrayXd r = (x.row(i).array()).cast<double>();
-    double rowMean = r.mean();
-    out[i] = (r - rowMean).square().sum() / (x.cols() - 1);
+List qpois_reg(NumericMatrix X, NumericVector Y, const double tol, const int maxiters, 
+               const double minphi, const bool returnfit){
+  const unsigned int n=X.nrow(), pcols=X.ncol(), d=pcols;
+  
+  arma::colvec b_old(d, arma::fill::zeros), b_new(d), L1(d), yhat(n), y(Y.begin(), n, false), m(n), phi(n);
+  arma::mat L2, x(X.begin(), n, pcols, false), x_tr(n, pcols);
+  double dif;
+  b_old=arma::solve(x, log1p(y), arma::solve_opts::fast);
+  x_tr=x.t();
+  int ij=2;
+  
+  for(dif=1.0;dif>tol;){
+    yhat=x*b_old;
+    m=(exp(yhat));
+    phi=y-m;
+    L1=x_tr*phi;
+    L2=x.each_col()%m;
+    L2=x_tr*L2;
+    b_new=b_old+solve(L2,L1,arma::solve_opts::fast);
+    dif=sum(abs(b_new-b_old));
+    b_old=b_new;
+    if(++ij==maxiters)
+      break;
   }
-  return out;
+  double p=sum(arma::square(phi)/m)/(n-pcols);
+  NumericVector coefs = NumericVector(b_new.begin(), b_new.end());
+  coefs.names() = colnames(X);
+  
+  List l;
+  l["coefficients"]=coefs;
+  l["phi"]=p;
+  l["theta.guesstimate"]=mean(m)/(std::max(p, minphi)-1);
+  if(returnfit){
+    l["fitted"]=NumericVector(m.begin(), m.end());
+  }
+  
+  return l;
 }
