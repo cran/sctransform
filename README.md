@@ -17,8 +17,15 @@ Available vignettes:
 [Variance stabilizing transformation](https://rawgit.com/ChristophH/sctransform/master/supplement/variance_stabilizing_transformation.html)  
 [Using sctransform in Seurat](https://rawgit.com/ChristophH/sctransform/master/supplement/seurat.html)  
 
+## Known Issues
+
+None so far - please use [the issue tracker](https://github.com/ChristophH/sctransform/issues) if you encounter a problem
+
 ## News
 For a detailed change log have a look at the file [NEWS.md](https://github.com/ChristophH/sctransform/blob/master/NEWS.md)
+
+### v0.3.2
+This release improves the coefficient initialization in quasi poisson regression that sometimes led to errors. There are also some minor bug fixes and a new non-parametric differential expression test for sparse non-negative data (`diff_mean_test`).
 
 ### v0.3.1
 This release fixes a performance regression when `sctransform::vst` was called via `do.call`, as is the case in the Seurat wrapper. 
