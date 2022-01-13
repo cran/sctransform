@@ -11,6 +11,7 @@ correct(
   as_is = FALSE,
   do_round = TRUE,
   do_pos = TRUE,
+  scale_factor = NA,
   verbosity = 2,
   verbose = NULL,
   show_progress = NULL
@@ -23,12 +24,15 @@ correct(
 
 \item{cell_attr}{Provide cell meta data holding latent data info}
 
-\item{as_is}{Use cell attributes as is and do not use the median; set to TRUE if you want to 
+\item{as_is}{Use cell attributes as is and do not use the median; set to TRUE if you want to
 manually control the values of the latent factors; default is FALSE}
 
 \item{do_round}{Round the result to integers}
 
 \item{do_pos}{Set negative values in the result to zero}
+
+\item{scale_factor}{Replace all values of UMI in the regression model by this value. Default is NA
+which uses median of total UMI as the latent factor.}
 
 \item{verbosity}{An integer specifying whether to show only messages (1), messages and progress bars (2) or nothing (0) while the function is running; default is 2}
 
