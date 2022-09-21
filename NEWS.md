@@ -1,6 +1,11 @@
 # News
 All notable changes will be documented in this file.
 
+## [0.3.5] - 2022-09-21
+
+### Fixed
+- Specify required Matrix version to >= 1.5.0
+
 ## [0.3.4] - 2022-08-19
 
 ### Added

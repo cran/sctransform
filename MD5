@@ -1,7 +1,7 @@
-d29ef92820d8592226b7806b90a46887 *DESCRIPTION
+abf226def523aaf298cbc7d7b464b387 *DESCRIPTION
 84dcc94da3adb52b53ae4fa38fe49e5d *LICENSE
 6866258ae7ec352de8bb6ffba1cc012f *NAMESPACE
-d79c757cd336c4b7f5e531ca2fd43090 *NEWS.md
+6297d3f0b3bda596aed823f591baeca5 *NEWS.md
 eb2dceb9a69aa46686fc844d8b461cce *R/RcppExports.R
 7d5d18729ee57528b9bbac6adb59179f *R/data.R
 db8dc99681ef12edd6f699dc6714be3f *R/denoise.R
@@ -16,7 +16,7 @@ d99f120ecde3c3fce7420a5bff2ae186 *README.md
 0c6ad5b3446721162c89589e8077ab1c *build/partial.rdb
 8c302f87e051c80640fd342cb5fd2cc6 *data/pbmc.rda
 7b932528197e877027fee2b2aeea795b *data/umify_data.rda
-ca1570f49127fbaa4abad84ac9b2a2cc *inst/CITATION
+849a9360305089cf63fe3539dc0607f7 *inst/CITATION
 9076a0fc5263f058dcd4c675bc31fde8 *man/compare_expression.Rd
 3d582e0c9587ba1c59c407f1ed60df17 *man/correct.Rd
 ab5f93e4ccca66bea98a109da06650da *man/correct_counts.Rd

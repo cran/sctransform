@@ -1,8 +1,8 @@
 Package: sctransform
 Type: Package
 Title: Variance Stabilizing Transformations for Single Cell UMI Data
-Version: 0.3.4
-Date: 2022-08-19
+Version: 0.3.5
+Date: 2022-09-21
 Authors@R: c(
   person(given = "Christoph", family = "Hafemeister", email = "christoph.hafemeister@nyu.edu", role = "aut", comment = c(ORCID = "0000-0001-6365-8254")),
   person(given = "Saket", family = "Choudhary", email = "schoudhary@nygenome.org", role = c("aut", "cre"), comment = c(ORCID = "0000-0001-5202-7633")),
@@ -23,16 +23,17 @@ LazyData: true
 Depends: R (>= 3.5.0)
 LinkingTo: RcppArmadillo, Rcpp (>= 0.11.0)
 SystemRequirements: C++11
-Imports: dplyr, magrittr, MASS, Matrix, methods, future.apply, future,
-        ggplot2, reshape2, rlang, gridExtra, matrixStats
+Imports: dplyr, magrittr, MASS, Matrix (>= 1.5.0), methods,
+        future.apply, future, ggplot2, reshape2, rlang, gridExtra,
+        matrixStats
 Suggests: irlba, testthat, knitr
 Enhances: glmGamPoi
 RoxygenNote: 7.2.1
 NeedsCompilation: yes
-Packaged: 2022-08-19 21:02:51 UTC; choudharys
+Packaged: 2022-09-21 16:33:54 UTC; choudharys
 Author: Christoph Hafemeister [aut] (<https://orcid.org/0000-0001-6365-8254>),
   Saket Choudhary [aut, cre] (<https://orcid.org/0000-0001-5202-7633>),
   Rahul Satija [ctb] (<https://orcid.org/0000-0001-9448-8833>)
 Maintainer: Saket Choudhary <schoudhary@nygenome.org>
 Repository: CRAN
-Date/Publication: 2022-08-20 22:10:05 UTC
+Date/Publication: 2022-09-21 17:10:07 UTC
