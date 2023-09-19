@@ -144,7 +144,13 @@ vst <- function(umi,
       if (verbosity>0){
         message("vst.flavor='v2' set, setting model to use fixed slope and exclude poisson genes.")
       }
+      glmGamPoi_check <- requireNamespace("glmGamPoi", quietly = TRUE)
       method <- "glmGamPoi_offset"
+      if (!glmGamPoi_check){
+        message('`vst.flavor` is set to "v2" but could not find glmGamPoi installed.
+                Please install the glmGamPoi package. See https://github.com/const-ae/glmGamPoi for details.')
+        method <- "nb_offset"
+      }
       exclude_poisson <- TRUE
       if (min_variance == -Inf) min_variance <- 'umi_median'
       if (is.null(n_cells)) n_cells <- 2000
@@ -372,6 +378,7 @@ vst <- function(umi,
     if (verbosity > 1) {
       pb <- txtProgressBar(min = 0, max = max_bin, style = 3)
     }
+    # browser()
     res <- matrix(NA_real_, length(genes), nrow(regressor_data_final), dimnames = list(genes, rownames(regressor_data_final)))
     for (i in 1:max_bin) {
       genes_bin <- genes[bin_ind == i]
@@ -603,20 +610,20 @@ get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1,
         if (method == 'poisson') {
           return(fit_poisson(umi = umi_bin_worker, model_str = model_str, data = data_step1, theta_estimation_fun = theta_estimation_fun))
         }
-        if (method == 'qpoisson') {
+        else if (method == 'qpoisson') {
           return(fit_qpoisson(umi = umi_bin_worker, model_str = model_str, data = data_step1))
         }
-        if (method == 'nb_theta_given') {
+        else if (method == 'nb_theta_given') {
           theta_given_bin_worker <- theta_given_bin[indices]
           return(fit_nb_theta_given(umi = umi_bin_worker, model_str = model_str, data = data_step1, theta_given = theta_given_bin_worker))
         }
-        if (method == 'nb_fast') {
+        else if (method == 'nb_fast') {
           return(fit_nb_fast(umi = umi_bin_worker, model_str = model_str, data = data_step1, theta_estimation_fun = theta_estimation_fun))
         }
-        if (method == 'nb') {
+        else if (method == 'nb') {
           return(fit_nb(umi = umi_bin_worker, model_str = model_str, data = data_step1))
         }
-        if (method == "glmGamPoi") {
+        else if (method == "glmGamPoi") {
           if (fix_slope | fix_intercept){
             if (packageVersion("glmGamPoi")<"1.5.1"){
               stop('Please install glmGamPoi >= 1.5.1 from https://github.com/const-ae/glmGamPoi')
@@ -629,10 +636,14 @@ get_model_pars <- function(genes_step1, bin_size, umi, model_str, cells_step1,
           return(fit_glmGamPoi(umi = umi_bin_worker, model_str = model_str,
                                data = data_step1, allow_inf_theta = exclude_poisson))
         }
-       if (method == "glmGamPoi_offset") {
+       else if (method == "glmGamPoi_offset") {
           return(fit_glmGamPoi_offset(umi = umi_bin_worker, model_str = model_str,
                                       data = data_step1, allow_inf_theta = exclude_poisson))
+       }
+        else if (method == "nb_offset") {
+          return(fit_nb_offset(umi = umi_bin_worker, model_str = model_str, data = data_step1, allow_inf_theta = exclude_poisson))
         }
+
       },
       future.seed = TRUE
     )
@@ -715,6 +726,11 @@ reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, c
                            fix_intercept = FALSE, fix_slope = FALSE, use_geometric_mean = TRUE,
                            use_geometric_mean_offset = FALSE, verbosity = 0) {
   genes <- names(genes_log_gmean)
+  ## if a batch variable is set switch off excluding poisson genes
+  if (!is.null(x = batch_var)) {
+    exclude_poisson <- FALSE
+    fix_slope <- FALSE
+  }
   if (exclude_poisson | fix_slope | fix_intercept){
     # exclude this from the fitting procedure entirely
     # at the regularization step
@@ -761,11 +777,30 @@ reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, c
 
     # Call offset model with theta=inf
     # only the slope and intercept are used downstream
-    mean_cell_sum <- mean(colSums(umi))
-    vst_out_offset <- cbind(rep(Inf, length(all_poisson_genes)),
-                            log(genes_amean[all_poisson_genes]) - log(mean_cell_sum),
-                            rep(log(10), length(all_poisson_genes) ))
-    dimnames(vst_out_offset) <- list(all_poisson_genes, c('theta', '(Intercept)', 'log_umi'))
+    mean_cell_sum <- mean(x = colSums(umi))
+    if ("log_umi" %in% colnames(x = model_pars)){
+      vst_out_offset <- cbind(rep(Inf, length(all_poisson_genes)),
+                              log(genes_amean[all_poisson_genes]) - log(mean_cell_sum),
+                              rep(log(10), length(all_poisson_genes) ))
+      dimnames(vst_out_offset) <- list(all_poisson_genes, c('theta', '(Intercept)', 'log_umi'))
+    } else {
+      vst_out_offset <- cbind(rep(Inf, length(all_poisson_genes)),
+                              log(genes_amean[all_poisson_genes]) - log(mean_cell_sum))
+      dimnames(vst_out_offset) <- list(all_poisson_genes, c('theta', '(Intercept)'))
+    }
+
+    n_coefficients <- ncol(x = model_pars)
+    if (n_coefficients > ncol(x = vst_out_offset)) {
+      # set all other parameters to zero
+      n_existing <- ncol(x = vst_out_offset)
+      n_diff <- n_coefficients - ncol(x = vst_out_offset)
+
+      vst_out_offset_remaining <- matrix(data = 0, nrow = nrow(x = vst_out_offset),
+                                         ncol = n_diff,
+                                         dimnames = list(all_poisson_genes,
+                                                         colnames(x = model_pars)[(n_existing+1):n_coefficients]))
+      vst_out_offset <- cbind(vst_out_offset, vst_out_offset_remaining)
+    }
     dispersion_par <- rep(0, dim(vst_out_offset)[1])
     vst_out_offset <- cbind(vst_out_offset, dispersion_par)
   }
@@ -893,6 +928,7 @@ reg_model_pars <- function(model_pars, genes_log_gmean_step1, genes_log_gmean, c
   model_pars_fit <- model_pars_fit[, colnames(model_pars_fit) != 'dispersion_par']
   model_pars_fit <- cbind(theta, model_pars_fit)
   all_genes <- rownames(model_pars_fit)
+  # browser()
   if (exclude_poisson){
     if (verbosity > 0) {
       message(paste('Replacing fit params for', length(all_poisson_genes),  'poisson genes by theta=Inf'))

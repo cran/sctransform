@@ -1,4 +1,4 @@
-# Fir NB regression models using different approaches
+# Fit NB regression models using different approaches
 
 fit_poisson <- function(umi, model_str, data, theta_estimation_fun) {
   regressor_data <- model.matrix(as.formula(gsub('^y', '', model_str)), data)
@@ -93,7 +93,7 @@ fit_overdisp_mle <- function(umi, mu, intercept, slope){
   fit <- glmGamPoi::overdispersion_mle(umi,
                                        mu,
                                        model_matrix = NULL,
-                                       do_cox_reid_adjustment = TRUE, #!is.null(model_matrix),
+                                       do_cox_reid_adjustment = TRUE,
                                        global_estimate = FALSE,
                                        subsample = FALSE,
                                        max_iter = 200,
@@ -106,18 +106,28 @@ fit_overdisp_mle <- function(umi, mu, intercept, slope){
 
 # Use log_umi as offset using glmGamPoi
 fit_glmGamPoi_offset <- function(umi, model_str, data,  allow_inf_theta=FALSE) {
-  # only intercept varies
-  new_formula <- gsub("y", "", model_str)
-  # remove log_umi from model formula if it is with batch variables
-  new_formula <- gsub("\\+ log_umi", "", new_formula)
-  # replace log_umi with 1 if it is the only formula
-  new_formula <- gsub("log_umi", "1", new_formula)
-
   log10_umi <- data$log_umi
   stopifnot(!is.null(log10_umi))
   log_umi <- log(10^log10_umi)
 
+  # only intercept varies
+  includes.batch_var <- FALSE
+  if (grepl(pattern = "\\(log_umi\\) :", x = model_str)) {
+    includes.batch_var <- TRUE
+  }
+  new_formula <- gsub("y", "", model_str)
 
+  includes.log_umi <- grepl(pattern = "~ log_umi", x = new_formula)
+  if (!includes.batch_var) {
+    # if therse is no batch variable - remove log_umi and fix it
+    # remove log_umi from model formula if it is with batch variables
+    new_formula <- gsub(pattern = "\\+ log_umi", replacement = "", x = new_formula)
+    # replace log_umi with 1 if it is the only formula
+
+    new_formula <- gsub(pattern = "log_umi", replacement = "1", x = new_formula)
+  } else {
+    log_umi <- 0
+  }
   fit <- glmGamPoi::glm_gp(data = umi,
                            design = as.formula(new_formula),
                            col_data = data,
@@ -127,9 +137,72 @@ fit_glmGamPoi_offset <- function(umi, model_str, data,  allow_inf_theta=FALSE) {
   if (!allow_inf_theta){
     fit$theta <- pmin(1 / fit$overdispersions, rowMeans(fit$Mu) / 1e-4)
   }
-  model_pars <- cbind(fit$theta,
-                      fit$Beta[, "Intercept"],
-                      rep(log(10), nrow(umi)))
-  dimnames(model_pars) <- list(rownames(umi), c('theta', '(Intercept)', 'log_umi'))
+  if ("Intercept" %in% colnames(x = fit$Beta)) {
+    if (includes.log_umi){
+      model_pars <- cbind(fit$theta,
+                          fit$Beta[, "Intercept"],
+                          rep(log(10), nrow(umi)))
+      dimnames(model_pars) <- list(rownames(umi), c('theta', '(Intercept)', 'log_umi'))
+
+      n_coefficients <- ncol(fit$Beta)
+      if (n_coefficients>1){
+        model_pars <- cbind(model_pars, fit$Beta[, 2:n_coefficients])
+        colnames(x = model_pars)[4:ncol(x = model_pars)] <- colnames(x = fit$Beta)[2:n_coefficients]
+      }
+    } else {
+      model_pars <- cbind(fit$theta,
+                          fit$Beta)
+      dimnames(model_pars) <- list(rownames(umi), c('theta', colnames(x = fit$Beta)))
+    }
+  } else {
+    if (!includes.batch_var){
+      if (includes.log_umi){
+        model_pars <- cbind(fit$theta,
+                            rep(log(10), nrow(umi)),
+                            fit$Beta)
+        dimnames(model_pars) <- list(rownames(umi), c('theta', 'log_umi', colnames(x = fit$Beta)))
+      } else {
+        model_pars <- cbind(fit$theta,
+                            fit$Beta)
+        dimnames(model_pars) <- list(rownames(umi), c('theta', colnames(x = fit$Beta)))
+      }
+    } else {
+      model_pars <- cbind(fit$theta,
+                          fit$Beta)
+      dimnames(model_pars) <- list(rownames(umi), c('theta', colnames(x = fit$Beta)))
+    }
+  }
+  colnames(x = model_pars)[match(x = 'Intercept', table = colnames(x = model_pars))] <- "(Intercept)"
+  return(model_pars)
+}
+
+fit_nb_offset <- function(umi, model_str, data, allow_inf_theta=FALSE) {
+  # remove log_umi from model formula if it is with batch variables
+  new_formula <- gsub("\\+ log_umi", "", model_str)
+  # replace log_umi with 1 if it is the only formula
+  new_formula <- gsub("log_umi", "1 + offset(log_umi)", new_formula)
+
+  log10_umi <- data$log_umi
+  stopifnot(!is.null(log10_umi))
+  log_umi <- log(10^log10_umi)
+  data$log_umi <- log_umi
+
+  par_mat <- apply(umi, 1, function(y) {
+    fit <- 0
+    try(fit <- glm.nb(formula = as.formula(new_formula), data = data), silent=TRUE)
+    if (inherits(x = fit, what = 'numeric')) {
+      fit <- glm(formula = as.formula(new_formula), data = data, family = poisson)
+      fit$theta <- Inf
+      #fit$theta <- as.numeric(x = suppressWarnings(theta.ml(y = y, mu = fit$fitted)))
+    }
+    if (!allow_inf_theta){
+      fit$theta <- pmin(fit$theta, mean(y) / 1e-4)
+    }
+    return(c(fit$theta, fit$coefficients))
+  })
+  model_pars <- t(par_mat)
+  model_pars <- cbind(model_pars, rep(log(10), nrow(umi)))
+  rownames(x = model_pars) <- rownames(x = umi)
+  colnames(x = model_pars)[match(x = 'Intercept', table = colnames(x = model_pars))] <- "(Intercept)"
   return(model_pars)
 }

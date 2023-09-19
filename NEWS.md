@@ -1,6 +1,21 @@
 # News
 All notable changes will be documented in this file.
 
+## [0.5.0] - 2023-09-18
+
+### Added
+- Add `fit_nb_offset` to support vst.flavor='v2' by default
+
+### Fixed 
+- Updated cpp utilities to adhere to C++17 standards (`std::random_shuffle` -> `std::shuffle`)
+- Handling of extra variables in `latent_var` when `vst.flavor="v2"`
+
+### Changed
+- Changed `get_nz_median2` to support `genes` argument; thanks @boomanaiden154 and @ScreachingFire. [#155](https://github.com/satijalab/sctransform/pull/155)
+- Replaced `get_nz_median` with faster alternative `get_nz_median2` across all calls
+- Removed `get_nz_median` 
+- Updated `make_cell_attr` to be flexible for named vectors; thanks @moi-taga [#171](https://github.com/satijalab/sctransform/pull/171)
+
 ## [0.3.5] - 2022-09-21
 
 ### Fixed

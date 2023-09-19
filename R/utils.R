@@ -11,7 +11,7 @@ make_cell_attr <- function(umi, cell_attr, latent_var, batch_var, latent_var_non
   }
 
   # Make sure rownames of cell attributes match cell names in count matrix
-  if (!identical(rownames(cell_attr), colnames(umi))) {
+  if (!setequal(rownames(cell_attr), colnames(umi))) {
     stop('cell attribute row names must match column names of count matrix')
   }
 
@@ -237,7 +237,7 @@ get_residuals <- function(vst_out, umi, residual_type = 'pearson',
   # min_variance estimated using median umi
   if (min_variance == "umi_median"){
     # Maximum pearson residual for non-zero median UMI is 5
-    min_var <- (get_nz_median(umi) / 5)^2
+    min_var <- (get_nz_median2(umi) / 5)^2
     if (verbosity > 0) {
       message(paste("Setting min_variance based on median UMI: ", min_var))
     }
@@ -359,7 +359,7 @@ get_residual_var <- function(vst_out, umi, residual_type = 'pearson',
   # min_variance estimated using median umi
   if (min_variance == "umi_median"){
     # Maximum pearson residual for non-zero median UMI is 5
-    min_var <- (get_nz_median(umi, genes) / 5)^2
+    min_var <- (get_nz_median2(umi, genes) / 5)^2
     if (verbosity > 0) {
       message(paste("Setting min_variance based on median UMI: ", min_var))
     }
@@ -493,35 +493,25 @@ get_model_var <- function(vst_out, cell_attr = vst_out$cell_attr, use_nonreg = F
 }
 
 
-#' Get median of non zero UMIs from a count matrix using a subset of genes (slow)
-#'
-#' @param umi Count matrix
-#' @param genes List of genes to calculate statistics. Default is NULL which returns the non-zero median using all genes
-#'
-#' @return A numeric value representing the median of non-zero entries from the UMI matrix
-get_nz_median <- function(umi, genes = NULL){
-  cm.T <- Matrix::t(umi)
-  n_g <- dim(umi)[1]
-  allnonzero <- c()
-  if (is.null(genes)) {
-    gene_index <- seq(1, nrow(umi))
-  } else {
-    gene_index <- which(genes %in% rownames(umi))
-  }
-  for (g in gene_index) {
-    m_i <- cm.T@x[(cm.T@p[g] + 1):cm.T@p[g + 1]]
-    allnonzero <- c(allnonzero, m_i)
-  }
-  return (median(allnonzero, na.rm = TRUE))
-}
-
 #' Get median of non zero UMIs from a count matrix
 #'
 #' @param umi Count matrix
-#'
+#' @param genes A vector of genes to consider for calculating
+#' the median. Default is NULL which uses all genes.
 #' @return A numeric value representing the median of non-zero entries from the UMI matrix
-get_nz_median2 <- function(umi){
-  return (median(umi@x))
+get_nz_median2 <- function(umi, genes = NULL){
+  if (is.null(genes)) {
+    # Compute median for the entire matrix
+    return (median(umi@x))
+  } else if (length(genes) == 1) {
+    # If only one gene is being subsetted
+    return (median(umi[genes, umi[genes,] != 0]))
+  } else if (length(genes) > 1) {
+    # If multiple genes are being subsetted
+    return (median(umi[genes,]@x))
+  } else {
+    stop("genes does not contain a vector of gene names")
+  }
 }
 
 #' Convert a given matrix to dgCMatrix
