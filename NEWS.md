@@ -1,7 +1,17 @@
 # News
 All notable changes will be documented in this file.
 
-## [0.5.0] - 2023-09-18
+## [0.4.1] - 2023-10-18
+
+### Fixed 
+
+- Fixed column name setting in `fit_nb_offset`
+
+### Changed
+
+- Verbose messages when invoking `v2`: messages are only invoked if verbosity > 1. 
+
+## [0.4.0] - 2023-09-18
 
 ### Added
 - Add `fit_nb_offset` to support vst.flavor='v2' by default
